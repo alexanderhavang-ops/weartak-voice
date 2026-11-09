@@ -1,0 +1,10 @@
+{
+  "source_repository": "alexanderhavang-ops/taks",
+  "source_commit": "3042b0cdca4b6b28323610e1c38c8ea871ce03bc",
+  "writers": [
+    "takctl/takctl/onboarding/vx.py",
+    "martine/martine/tools/voice_onboarding_package.py"
+  ],
+  "synthetic": true,
+  "credentials": false
+}

@@ -1,0 +1,34 @@
+{
+  "missionId": {
+    "uuid": "129fcdf4-ebe4-415c-9005-6d1d6b17b72a"
+  },
+  "name": "Samband-test",
+  "channels": [
+    {
+      "id": "51bf7a49-3b21-4481-bb54-75a8f9677941",
+      "name": "GruppL-Ö",
+      "host": "voice.example.org:64738",
+      "missionId": "129fcdf4-ebe4-415c-9005-6d1d6b17b72a",
+      "serverChannelId": 17,
+      "subtitle": "GruppL-Ö",
+      "isMumble": true,
+      "isEngineering": false,
+      "port": -1
+    },
+    {
+      "id": "169dd743-a579-4769-9a60-1fa582b8d584",
+      "name": "Command",
+      "host": "voice.example.org:64738",
+      "missionId": "129fcdf4-ebe4-415c-9005-6d1d6b17b72a",
+      "serverChannelId": 93,
+      "subtitle": "Command",
+      "isMumble": true,
+      "isEngineering": false,
+      "port": -1
+    }
+  ],
+  "missionType": "COMBINED",
+  "missionIP": "",
+  "missionPort": "-1",
+  "missionDefaultProtocol": "UDP"
+}
