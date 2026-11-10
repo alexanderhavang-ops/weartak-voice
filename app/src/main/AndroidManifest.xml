@@ -1,17 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.type.watch" android:required="true" />
-    <permission android:name="com.weartak.plugin.permission.BIND_PLUGIN" android:protectionLevel="signature" />
-    <application android:label="WearTAK Voice" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <application android:label="WearTAK Voice" android:icon="@drawable/ic_voice" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.NoActionBar">
         <meta-data android:name="com.google.android.wearable.standalone" android:value="true" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:taskAffinity="se.takcampus.voice.standalone" android:name=".MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><data android:scheme="content" android:mimeType="application/zip" /></intent-filter>
         </activity>
-        <receiver android:name=".ChannelReceiver" android:exported="true" android:permission="com.weartak.plugin.permission.BIND_PLUGIN">
-            <intent-filter><action android:name="se.takcampus.voice.STAGE_CHANNELS" /></intent-filter>
-        </receiver>
-        <service android:name=".VoicePluginService" android:exported="true" android:permission="com.weartak.plugin.permission.BIND_PLUGIN">
-            <intent-filter><action android:name="com.weartak.plugin.action.PLUGIN_SERVICE" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
-        </service>
+        <service android:name=".VoiceService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" />
     </application>
 </manifest>

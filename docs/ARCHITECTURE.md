@@ -1,88 +1,65 @@
-# Architecture and contracts
+# Standalone architecture
 
-## Configuration flow
+## Runtime
+
+The APK has its own package, `se.takcampus.voice.standalone`, launcher and private foreground
+service. It has no dependency on the WearTAK SDK or its signature permission.
 
 ```mermaid
 flowchart TD
-    M["TAKS / Martine voice package"] --> A["ATAK Vx import"]
-    M --> W["Independent WearTAK download"]
-    A --> C["Companion forwarding"]
-    C --> H["WearTAK host dispatch"]
-    W --> H
-    H --> R["Plugin-owned receiver"]
-    R --> P["Pending mission"]
-    P --> U["Wearer review"]
-    U --> S["Accepted channels"]
+    UI["Watch controls"] --> S["VoiceService"]
+    S --> C["MumbleConnection: verified TLS"]
+    S --> A["Android microphone / Opus / speaker"]
+    C --> M["Mumble server"]
+    A --> C
+    C --> A
+    I["Reviewed channel package"] --> UI
 ```
 
-Plugin import, staging and review are implemented. Companion forwarding and independent
-host dispatch are prepared as separate source patches and remain unverified integrations.
-The native ZIP file picker provides a direct import path for prototype testing.
+`MumbleConnection` implements bounded control framing, protobuf fields, login, synchronized
+channel state and legacy Opus datagrams over Mumble's TCP tunnel. It advertises Mumble 1.3
+wire compatibility and Opus capability. UDP, whisper targets, channel linking and automatic
+reconnect are not implemented.
 
-## Package formats
+PTT is permitted only after a live channel join is confirmed and the server has not muted,
+deafened or suppressed the user. Imported IDs must still name the expected channel. A capture
+token is invalidated on release; stale queued audio is discarded and an end-of-transmission
+packet is sent. Transmissions never resume automatically after reconnect or route changes.
 
-TAKS emits `MANIFEST/manifest.xml`, extensionless mission JSON and a `_proto` entry.
-TAKCTL wraps the protobuf server record in field 1; Martine writes that record directly.
-The importer handles both verified encodings and checks JSON/binary agreement. It is not
-claimed to decode every Vx/Vx2 version or arbitrary third-party binary schema.
+`VoiceAudio` uses platform MediaCodec Opus at 48 kHz mono, AudioRecord only during PTT and
+AudioTrack for playback. Receive work is bounded to 24 queued packets and four active decoders;
+stale audio is dropped rather than replayed late. Device behaviour and audio quality still need
+physical-watch testing. The foreground service owns session lifetime and notification controls.
 
-Channel IDs come from the package and are never synthesized by this importer. Before live
-transmit is implemented, the client must verify the live ID still names the intended channel;
-server recreation must not silently redirect transmission.
+## Authentication and storage
 
-The legacy JSON `missionDefaultProtocol: UDP` is mission metadata. It does not authorize
-plaintext transport or disabling TLS for the future Mumble connection.
+The SSL context uses system trust or explicitly imported private CA certificates and always
+checks the server hostname. An optional imported PKCS#12 identity supplies client key managers.
+A Mumble password is optional when the server accepts that certificate identity. No trust-all
+mode, host-credential extraction or plaintext Mumble transport is provided.
 
-## Plugin receiver
+Settings and imported identity material are encrypted in an atomic private file with AES-GCM
+using an Android Keystore key. The key is non-exported; decrypted credentials/private-key data
+still exist in the app process when needed for TLS. Backup is disabled. This does not make a
+compromised running app unable to use its credentials.
 
-- Package: `se.takcampus.voice.watch`
-- Action: `se.takcampus.voice.STAGE_CHANNELS`
-- Required sender permission: `com.weartak.plugin.permission.BIND_PLUGIN` (signature)
-- Intent extra: `envelope`, a UTF-8 JSON string bounded to 49,152 bytes
-- Message type: `voice_channels_v1`; version: integer `1`
-- Fields: `type`, `version`, `transferId`, `sha256`, `missionJson`
+The server remains responsible for trusting the certificate, identifying the user, revocation
+and channel ACLs. A presented common name or matching TAK callsign alone is not authentication.
+No TAKS authenticator was changed or deployed by this client milestone.
 
-`missionJson` is a string containing the exact validated mission JSON. SHA-256 binds the
-receipt to those bytes. It does not authenticate the sender; authentication comes from
-the signature permission and, on the proposed delivery paths, the bonded phone link or
-authenticated TAK download.
+## Channel onboarding
 
-The importer bounds compressed/expanded sizes, entry count, JSON/protobuf payloads and
-nesting. It rejects unsafe ZIP paths, ambiguous missions, unsupported channel types and
-unexpected configuration fields. Credentials and certificate trust are outside this contract.
+TAKS emits a mission ZIP with `MANIFEST/manifest.xml`, extensionless JSON and `_proto` data.
+The importer supports both verified TAKS binary server-record layouts, including binary-only
+packages; matching JSON and binary contents are required when both are present. Arbitrary
+Vx/Vx2 binary schema compatibility is not claimed.
 
-## Receipt semantics
+`ChannelStore` retains pending and accepted configuration plus 64 transfer receipts in one
+atomic file. SHA-256 binds a transfer to its bytes; it does not authenticate a sender. In this
+standalone version, `VoiceHandoff` is internal staging data, not an exported broadcast API.
+The signature-protected receiver and plugin Binder service from 0.1 have been removed.
 
-| Status | Meaning |
-| --- | --- |
-| `STAGED` | Pending configuration was written durably; wearer review is required |
-| `APPLIED` | The wearer accepted and saved that configuration |
-| `REJECTED` | The wearer dismissed it |
-| `UNAVAILABLE` | Host could not obtain a valid receiver acknowledgement |
-
-The first three are receiver states. `UNAVAILABLE` is a proposed host transport result,
-including missing plugin, incompatible signing, timeout or failed staging.
-No receipt means authenticated to Mumble, joined a channel, or able to transmit audio.
-
-An atomic file contains pending state, accepted state and the last 64 transfer receipts.
-Repeating a retained transfer ID with identical bytes is idempotent; changing its digest is
-rejected. Another mission cannot replace an unreviewed pending mission. The bounded ledger
-is not an unlimited replay database, and packages have no signed revision/expiry yet.
-
-## Audio design constraints
-
-The plugin will own the Mumble session, channel control, Opus engine, playback and PTT state.
-Host v3 PCM capture and independent capture require negotiated ownership and bounded queues.
-A paired watch needs either a usable OS network route or a separately implemented phone audio
-relay; the existing Companion JSON link alone supplies neither.
-
-Release PTT on cancel, disconnect, route change, permission loss and shutdown. Discard stale
-queued audio; do not replay it after reconnect or automatically resume a held transmission.
-Server TLS verification, user authentication and channel ACLs are distinct checks.
-
-## Credentials and trust
-
-Current TAKS voice packages do not contain the Mumble password. Future authentication and
-trust provisioning must remain explicit and must not leak secrets through settings schemas,
-action arguments, receipts, fixtures or logs. A watch and phone need distinct device sessions
-mapped to the same operator, rather than accidentally competing for one Mumble identity.
+A wearer selects a ZIP through a document provider or the app-owned ADB import folder,
+reviews it, and accepts it. Configuration import does not connect, grant channel access,
+install trust or transfer passwords. Automatic Companion, Martine and acoustic delivery are
+future work and must define their own authorized import/enrollment boundary.

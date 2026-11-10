@@ -5,3 +5,7 @@ dependencies {
     testImplementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")
 }
+tasks.test {
+    providers.gradleProperty("mumbleTestDir").orNull?.let { systemProperty("mumble.test.dir", it) }
+    providers.gradleProperty("mumbleTestPort").orNull?.let { systemProperty("mumble.test.port", it) }
+}

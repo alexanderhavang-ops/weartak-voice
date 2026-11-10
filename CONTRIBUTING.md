@@ -1,6 +1,6 @@
 # Contributing
 
-Keep this repository focused on the watch plugin. Put Martine, TAKS onboarding and server
+Keep this repository focused on the standalone watch app. Put Martine, TAKS onboarding and server
 changes in `alexanderhavang-ops/taks`; put WearTAK host and Companion changes in their own
 repositories or forks. Document cross-repository requirements without claiming unmerged work
 is available to users.
