@@ -6,6 +6,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 tasks.test {
+    providers.gradleProperty("audioTestPcm").orNull?.let { systemProperty("audio.test.pcm", it) }
     providers.gradleProperty("mumbleTestDir").orNull?.let { systemProperty("mumble.test.dir", it) }
     providers.gradleProperty("mumbleTestPort").orNull?.let { systemProperty("mumble.test.port", it) }
 }

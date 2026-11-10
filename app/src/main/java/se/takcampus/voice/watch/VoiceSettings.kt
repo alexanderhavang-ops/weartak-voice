@@ -21,6 +21,8 @@ import javax.net.ssl.TrustManagerFactory
 data class VoiceSettings(
     val host: String = "", val port: Int = 64738, val username: String = "",
     val password: String = "", val identity: ByteArray? = null, val identityPassword: String = "", val ca: ByteArray? = null,
+    val displayName: String = "", val setupChannels: String = "", val defaultChannelId: Int = -1,
+    val defaultChannelName: String = "", val credentialExpiresAt: Long = 0,
 ) {
     fun tls(): SSLContext {
         val keyManagers = identity?.let { bytes ->
@@ -70,7 +72,9 @@ object SettingsStore {
             val obj = JSONObject(String(clear, Charsets.UTF_8))
             fun blob(name: String): ByteArray? = obj.optString(name).takeIf { it.isNotEmpty() }?.let { Base64.decode(it, Base64.NO_WRAP) }
             return VoiceSettings(obj.getString("host"), obj.getInt("port"), obj.getString("username"), obj.optString("password"),
-                blob("identity"), obj.optString("identityPassword"), blob("ca"))
+                blob("identity"), obj.optString("identityPassword"), blob("ca"),
+                obj.optString("displayName"), obj.optString("setupChannels"), obj.optInt("defaultChannelId", -1),
+                obj.optString("defaultChannelName"), obj.optLong("credentialExpiresAt", 0))
         } finally { clear.fill(0) }
     }
     @Synchronized fun save(context: Context, settings: VoiceSettings) {
@@ -79,6 +83,9 @@ object SettingsStore {
             .put("password", settings.password).put("identityPassword", settings.identityPassword)
             .put("identity", settings.identity?.let { Base64.encodeToString(it, Base64.NO_WRAP) } ?: "")
             .put("ca", settings.ca?.let { Base64.encodeToString(it, Base64.NO_WRAP) } ?: "")
+        obj.put("displayName", settings.displayName).put("setupChannels", settings.setupChannels)
+            .put("defaultChannelId", settings.defaultChannelId).put("defaultChannelName", settings.defaultChannelName)
+            .put("credentialExpiresAt", settings.credentialExpiresAt)
         val clear = obj.toString().toByteArray(Charsets.UTF_8)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val encrypted = byteArrayOf(1) + cipher.iv + cipher.doFinal(clear); clear.fill(0)

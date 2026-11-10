@@ -63,3 +63,18 @@ A wearer selects a ZIP through a document provider or the app-owned ADB import f
 reviews it, and accepts it. Configuration import does not connect, grant channel access,
 install trust or transfer passwords. Automatic Companion, Martine and acoustic delivery are
 future work and must define their own authorized import/enrollment boundary.
+
+
+## Sound provisioning and input
+
+`AudioLinkCodec` is a bounded pure-Java acoustic HTTPS-link transport. `AudioOnboarding`
+records only during the visible setup flow, validates the link, confirms its origin, and
+POSTs its single-use ticket over standard verified HTTPS without redirects. Profile validation
+requires the voice host to match the heard origin. Accepted settings, assigned default channel
+and expiry are sealed in one settings-vault write. Existing configuration is not changed by
+listening, a failed download, or a rejected review. The saved channel is attempted once after
+login and requires server acknowledgement before PTT is enabled.
+
+`PttButton` handles momentary state, fresh presses and repeats. Android input handles only a
+learned delivered key. Activity focus/lifecycle changes clear its state and release PTT.
+The protocol details and limitations are in [sound onboarding](AUDIO_ONBOARDING.md).

@@ -4,7 +4,7 @@ A **standalone Wear OS Mumble app** for watch-based push-to-talk and TAKS channe
 It runs independently of WearTAK and ATAK, using its own microphone, speaker and network
 connection. WearTAK installation, plugin loading and upstream signing keys are not required.
 
-> **0.2 standalone alpha:** connection, channel controls and Android audio paths are implemented.
+> **0.3 audio onboarding alpha:** connection, channel controls and Android audio paths are implemented.
 > The network core has been tested against a real local Mumble server. Physical-watch microphone,
 > speaker, headset and background behaviour have not yet been verified.
 
@@ -13,6 +13,8 @@ connection. WearTAK installation, plugin loading and upstream signing keys are n
 - Verified TLS connection, with optional password or imported PKCS#12 client identity.
 - Optional private-CA import; no trust-all mode or plaintext connection fallback.
 - Live channel list, explicit joining and momentary hold-to-talk.
+- Learn an available physical PTT button, with release/focus-loss handling.
+- Phone-to-watch acoustic enrollment link and HTTPS voice profile download (matching TAKS update required).
 - Opus microphone capture and playback using Android's platform codecs.
 - Mumble's encrypted TCP audio tunnel; no additional native codec library.
 - Foreground service with a disconnect notification, explicit reconnection and bounded audio queues.
@@ -27,6 +29,7 @@ Certificate login requires an identity available to this app and accepted by the
 | Document | Contents |
 | --- | --- |
 | [Install and use](docs/SETUP.md) | Watch setup, credentials, imports and PTT |
+| [Sound setup and buttons](docs/AUDIO_ONBOARDING.md) | No typing on the watch, ticket security and transport contract |
 | [Status and roadmap](docs/STATUS.md) | Tested capabilities and remaining work |
 | [Architecture](docs/ARCHITECTURE.md) | Session, audio and credential boundaries |
 | [WearTAK team brief](docs/WEARTAK_TEAM.md) | Standalone decision and future integration |

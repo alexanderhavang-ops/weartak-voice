@@ -1,3 +1,13 @@
+# Install and use
+
+For **0.3 audio onboarding alpha**, install the new signed APK as an update to 0.2 (same
+application ID and signing key). Tap **Choose PTT button** to learn a delivered side button.
+For no-typing setup, use **Listen for setup** and **Play audio code** on your TAKS onboarding
+card after the server update is deployed. See [sound setup and buttons](AUDIO_ONBOARDING.md).
+
+The current server deployment is not verified; if your card has no audio button, it still
+needs the matching TAKS change. The 0.3 APK alone does not add that button to an older node.
+
 # Install and use the standalone alpha
 
 ## Installation
@@ -10,7 +20,7 @@ On a computer already paired with the watch through wireless ADB:
 
 ```bash
 adb connect WATCH_IP:CONNECTION_PORT
-adb -s WATCH_IP:CONNECTION_PORT install -r weartak-voice-0.2.0-standalone-alpha.apk
+adb -s WATCH_IP:CONNECTION_PORT install -r weartak-voice-0.3.0-audio-onboarding-alpha.apk
 ```
 
 The computer and watch must be on the same Wi-Fi network. Pairing and connection ports
@@ -70,4 +80,5 @@ selects one of its endpoints; importing does not automatically connect. Saved ch
 checked against their saved names before joining, so a reused server ID cannot silently
 select a different channel.
 
-Automatic Martine delivery, Companion forwarding and acoustic setup are not part of this alpha.
+Automatic Martine delivery and Companion forwarding are not part of this alpha. Acoustic setup
+is implemented in 0.3 and requires the matching TAKS update described above.

@@ -49,3 +49,16 @@ unmerged, undeployed prototypes, not a dependency of the standalone app:
 This repository owns the watch app. Martine, TAKS onboarding, channel provisioning and server
 certificate authentication belong in `alexanderhavang-ops/taks`. Host/Companion changes belong
 in their own repositories. Documentation is maintained with the corresponding code changes.
+
+
+## 0.3: reusable sound setup and physical PTT
+
+The standalone app now has an experimental WTK1 acoustic HTTPS-link receiver and an explicit
+profile download/review flow. The TAKS card emits a short-lived voice-scoped ticket; credentials
+travel over verified HTTPS. This avoids typing on a watch and does not require host key access.
+The transport is reusable by WearTAK later, but WearTAK must implement its own allowed URLs,
+profile schema and credential boundaries. No WearTAK receiver is shipped or claimed here.
+
+Physical PTT learns a delivered Wear OS stem/back key. Home/power and Samsung-reserved actions
+are not overridden. It works in the foreground only. [Protocol and usage](AUDIO_ONBOARDING.md).
+Server changes live in TAKS; deployment and physical watch verification remain outstanding.

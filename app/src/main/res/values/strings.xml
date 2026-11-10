@@ -1,1 +1,1 @@
-<resources><string name="connection_status">%1$s\n%2$s</string></resources>
+<resources><string name="connection_status">%1$s\n%2$s</string><string name="setup_listening">On your phone, open your TAKS onboarding page and tap Play audio code. Hold the speaker near the watch.\n\nListening for up to 60 seconds…</string></resources>

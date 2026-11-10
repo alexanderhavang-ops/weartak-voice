@@ -10,9 +10,11 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.widget.*
+import se.takcampus.voice.PttButton
 import se.takcampus.voice.MumbleConnection
 import se.takcampus.voice.VoiceHandoff
 import se.takcampus.voice.VoicePackageImporter
@@ -27,6 +29,63 @@ class MainActivity : Activity() {
     private lateinit var talk: Button
     private lateinit var connect: Button
     private lateinit var channels: Spinner
+    private val pttButton = PttButton()
+    private var learningButton = false
+    private var learnDialog: AlertDialog? = null
+    private var setup: AudioOnboarding? = null
+    private fun releasePtt() { pttButton.reset(); VoiceRuntime.ptt?.invoke(false) }
+    private fun buttonLabel(key: Int): String = when (key) {
+        KeyEvent.KEYCODE_BACK -> "Back button"
+        KeyEvent.KEYCODE_STEM_1 -> "Side button 1"
+        KeyEvent.KEYCODE_STEM_2 -> "Side button 2"
+        KeyEvent.KEYCODE_STEM_3 -> "Side button 3"
+        else -> "Screen button"
+    }
+    private fun savedButton(): Int = getPreferences(MODE_PRIVATE).getInt("pttButton", -1)
+    private fun assignButton() {
+        if (!idle()) return
+        releasePtt()
+        learningButton = true
+        learnDialog = AlertDialog.Builder(this).setTitle("Choose PTT button")
+            .setMessage("Press the side button you want to hold for PTT.\n\nIf Samsung opens another app or goes Home, that button is reserved by the watch. Try the other side button.\n\nThe Back button can be assigned while this app is open.")
+            .setNegativeButton("Cancel", null).setNeutralButton("Screen only") { _, _ ->
+                getPreferences(MODE_PRIVATE).edit().remove("pttButton").apply(); pttButton.assign(-1); render()
+            }.create().also { dialog ->
+                dialog.setOnDismissListener { learningButton = false }
+                dialog.setOnKeyListener { _, key, event -> learnKey(key, event) }
+                dialog.show()
+            }
+    }
+    private fun learnKey(key: Int, event: KeyEvent): Boolean {
+        if (!learningButton || !PttButton.assignable(key)) return false
+        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+            getPreferences(MODE_PRIVATE).edit().putInt("pttButton", key).apply(); pttButton.assign(key)
+            learnDialog?.dismiss(); render()
+            message("${buttonLabel(key)} assigned. Hold to talk, release to stop while WearTAK Voice is open. System long-press actions may still take over.")
+        }
+        return true
+    }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (learnKey(keyCode, event)) return true
+        if (pttButton.handles(keyCode) && hasWindowFocus()) {
+            if (pttButton.down(keyCode, event.repeatCount, VoiceRuntime.connection?.canTransmit() == true)) VoiceRuntime.ptt?.invoke(true)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (learnKey(keyCode, event)) return true
+        if (pttButton.handles(keyCode)) { if (pttButton.up(keyCode)) VoiceRuntime.ptt?.invoke(false); return true }
+        return super.onKeyUp(keyCode, event)
+    }
+    private fun listenForSetup() {
+        if (!idle()) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 12); return
+        }
+        setup?.close()
+        setup = AudioOnboarding(this) { render(); message("Setup saved. Tap Connect; your first assigned channel will be joined automatically.") }.also { it.start() }
+    }
     private var liveChannels = emptyList<MumbleConnection.Channel>()
     private var channelSignature = ""
     private val observer: () -> Unit = { runOnUiThread { if (!isFinishing && !isDestroyed && ::status.isInitialized) updateRuntime() } }
@@ -35,6 +94,7 @@ class MainActivity : Activity() {
         super.onCreate(state)
         volumeControlStream = AudioManager.STREAM_VOICE_CALL
         getExternalFilesDir("imports")?.mkdirs()
+        pttButton.assign(savedButton())
         render()
         if (Build.VERSION.SDK_INT >= 33 && !getPreferences(MODE_PRIVATE).getBoolean("notificationPrompted", false)) {
             getPreferences(MODE_PRIVATE).edit().putBoolean("notificationPrompted", true).apply()
@@ -43,9 +103,10 @@ class MainActivity : Activity() {
         intent.data?.takeIf { it.scheme == "content" }?.let { importUri(it, 1) }
     }
     override fun onResume() { super.onResume(); VoiceRuntime.observers.add(observer); updateRuntime() }
-    override fun onPause() { VoiceRuntime.ptt?.invoke(false); super.onPause() }
+    override fun onPause() { releasePtt(); setup?.close(); super.onPause() }
+    override fun onDestroy() { setup?.close(); super.onDestroy() }
     override fun onStop() { VoiceRuntime.observers.remove(observer); super.onStop() }
-    override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (!hasFocus) VoiceRuntime.ptt?.invoke(false) }
+    override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (!hasFocus) releasePtt() }
     private fun message(text: String) = AlertDialog.Builder(this).setMessage(text).setPositiveButton("OK", null).show()
     private fun idle(): Boolean {
         if (VoiceRuntime.connection != null || VoiceRuntime.state == MumbleConnection.State.CONNECTING) {
@@ -59,6 +120,10 @@ class MainActivity : Activity() {
         fun text(value: String): TextView = TextView(this).apply { text = value; textSize = 16f; column.addView(this) }
         fun button(label: String, action: () -> Unit): Button = Button(this).apply { text = label; setOnClickListener { action() }; column.addView(this) }
         text("WearTAK Voice").textSize = 20f
+        try {
+            val saved = SettingsStore.load(this)
+            if (saved.host.isBlank()) button("Set up from phone") { listenForSetup() }
+        } catch (_: Exception) { }
         status = text("Disconnected")
         speaker = text("")
         talk = button("HOLD TO TALK") { }.apply {
@@ -76,6 +141,7 @@ class MainActivity : Activity() {
                 }
             }
         }
+        text("PTT: ${buttonLabel(savedButton())}")
         connect = button("Connect") {
             if (VoiceRuntime.connection != null || VoiceRuntime.state == MumbleConnection.State.CONNECTING) VoiceRuntime.stop(this)
             else connectVoice()
@@ -91,6 +157,8 @@ class MainActivity : Activity() {
                 VoiceRuntime.connection?.join(channel.id, expected)
             } catch (_: Exception) { message("Channel unavailable or saved channel name no longer matches the server.") }
         }
+        button("Listen for setup") { listenForSetup() }
+        button("Choose PTT button") { assignButton() }
         button("Server & login") { if (idle()) serverDialog() }
         button("Client certificate / trust") { if (idle()) identityMenu() }
         try {
@@ -128,7 +196,15 @@ class MainActivity : Activity() {
         channelSignature = ""; updateRuntime()
     }
     private fun updateRuntime() {
-        status.text = getString(se.takcampus.voice.watch.R.string.connection_status, VoiceRuntime.state, VoiceRuntime.detail)
+        val stateLabel = when (VoiceRuntime.state) {
+            MumbleConnection.State.READY -> "Ready to talk"
+            MumbleConnection.State.CONNECTED -> "Choose a channel"
+            MumbleConnection.State.CONNECTING, MumbleConnection.State.AUTHENTICATING -> "Connecting…"
+            MumbleConnection.State.JOINING -> "Joining channel…"
+            MumbleConnection.State.ERROR -> "Connection failed"
+            else -> "Disconnected"
+        }
+        status.text = getString(se.takcampus.voice.watch.R.string.connection_status, stateLabel, VoiceRuntime.detail)
         speaker.text = VoiceRuntime.speaker.takeIf { it.isNotEmpty() }?.let { "Speaking: $it" } ?: ""
         talk.isEnabled = VoiceRuntime.connection?.canTransmit() == true
         talk.text = if (VoiceRuntime.transmitting) "TRANSMITTING — RELEASE" else "HOLD TO TALK"
@@ -147,7 +223,10 @@ class MainActivity : Activity() {
     private fun connectVoice() {
         try {
             val settings = SettingsStore.load(this)
-            if (settings.host.isBlank() || settings.username.isBlank()) { serverDialog(); return }
+            if (settings.host.isBlank() || settings.username.isBlank()) { listenForSetup(); return }
+            if (settings.credentialExpiresAt > 0 && settings.credentialExpiresAt <= System.currentTimeMillis() / 1000) {
+                message("Watch login expired. Use Listen for setup and play a fresh audio code from your TAKS page."); return
+            }
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10); return
             }
@@ -157,6 +236,7 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(code, permissions, results)
         if (code == 10 && results.firstOrNull() == PackageManager.PERMISSION_GRANTED) connectVoice()
+        if (code == 12 && results.firstOrNull() == PackageManager.PERMISSION_GRANTED) listenForSetup()
     }
     // Manual fallback for standalone alpha; phone-assisted provisioning is not available yet.
     @SuppressLint("WearPasswordInput")
@@ -176,7 +256,8 @@ class MainActivity : Activity() {
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             try {
                 val settings = old.copy(host = host.text.toString().trim(), port = port.text.toString().toInt(),
-                    username = user.text.toString().trim(), password = pass.text.toString())
+                    username = user.text.toString().trim(), password = pass.text.toString(),
+                    displayName = "", setupChannels = "", defaultChannelId = -1, defaultChannelName = "", credentialExpiresAt = 0)
                 require(settings.host.isNotEmpty() && !settings.host.contains('/') && settings.username.isNotEmpty())
                 SettingsStore.save(this, settings); pass.setText(""); dialog.dismiss()
             } catch (_: Exception) { Toast.makeText(this, "Check hostname, port and username", Toast.LENGTH_SHORT).show() }

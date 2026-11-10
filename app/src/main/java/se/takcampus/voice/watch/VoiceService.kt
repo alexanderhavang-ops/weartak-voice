@@ -84,6 +84,7 @@ class VoiceService : Service() {
                     val manager = getSystemService(AudioManager::class.java)
                     previousAudioMode = manager.mode; manager.mode = AudioManager.MODE_IN_COMMUNICATION; ownsAudioMode = true
                     audio = VoiceAudio(applicationContext) { message -> main.post { setPtt(false); VoiceRuntime.detail = message; VoiceRuntime.changed() } }
+                    var attemptedDefault = false
                     val listener = object : MumbleConnection.Listener {
                         override fun state(state: MumbleConnection.State, detail: String) {
                             main.post {
@@ -91,6 +92,11 @@ class VoiceService : Service() {
                                 VoiceRuntime.state = state; VoiceRuntime.detail = finalMessage ?: detail
                                 if (state != MumbleConnection.State.READY || connection?.canTransmit() != true) setPtt(false)
                                 VoiceRuntime.changed()
+                                if (state == MumbleConnection.State.CONNECTED && settings.defaultChannelId >= 0 && !attemptedDefault) {
+                                    attemptedDefault = true
+                                    try { connection?.join(settings.defaultChannelId, settings.defaultChannelName) }
+                                    catch (_: Exception) { VoiceRuntime.detail = "Saved channel changed. Choose a channel."; VoiceRuntime.changed() }
+                                }
                                 if (state == MumbleConnection.State.ERROR || state == MumbleConnection.State.CLOSED) stopSelf()
                             }
                         }
