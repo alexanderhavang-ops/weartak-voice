@@ -47,7 +47,7 @@ The implementation is a development fork/proposal, not a claim that stock WearTA
 9. **Connect voice explicitly.** Use Voice's own configured Mumble login/TLS identity.
    If it is missing, offer Server & login or the existing acoustic setup flow.
    Importing channels does not connect, install trust, enroll a certificate, or
-   expose WearTAK's private keys. The package has no Mumble password.
+   expose WearTAK's private keys. The selected ZIP can supply a Mumble account or a shared server password. Companion preserves it. For a missing login, Companion can include a matching host’s saved ATAK account after the sender reviews the destination.
 
 ```mermaid
 flowchart TD
@@ -83,7 +83,7 @@ not needed for the standalone APK.
 | --- | --- | --- |
 | Existing TAK connection login/certificate | WearTAK's TAK connection and package download | Neither changed nor exposed to Voice |
 | VX mission/channel data | Shared Voice importer | Transferred and reviewed |
-| Mumble login, voice client identity and private CA | Voice's own TLS connection | Existing Voice setup or an explicit Voice setup step |
+| Mumble login, voice client identity and private CA | Voice's own TLS connection | The selected ZIP may supply a login. Client certificates and private CAs use Voice setup. |
 | Callsign/team/color | TAK identity/display | Separate from authentication; existing ATAK identity transfer remains independent |
 
 ## Capabilities and versions
@@ -125,3 +125,9 @@ or explicit click-toggle, with a 60-second limit. Sources are tracked separately
 release, cancellation, focus/route/network loss and teardown stop transmission and
 never resume it automatically. Vendor BLE/SPP PTT devices need adapters. Buds
 support depends on their actual Android events and needs physical qualification.
+
+### Optional login in a voice ZIP
+
+The manifest-selected mission JSON can include `username` and `password`, or `serverPassword` alone. Put these fields on a Mumble channel to scope them to its host and port. Mission-level credentials apply only to a single Mumble endpoint. A shared password uses the watch’s configured guest name. A ZIP containing credentials is sensitive. The watch asks for package review and seals credential-bearing channel state with Android Keystore.
+
+Companion preserves an embedded login ahead of any saved phone account. For Bluetooth and paired Wi-Fi, it packages the selected mission and any applicable login in a bounded ZIP inside the existing v1 message. A channel-only message remains readable by earlier clients.

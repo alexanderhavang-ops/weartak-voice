@@ -35,10 +35,10 @@ public final class VoicePackageImporter {
         try {
             return legacyJsonFromZip(data);
         } catch (Exception legacyFailure) {
-            if (legacyFailure.getMessage() != null && legacyFailure.getMessage().startsWith("Conflicting ")) throw legacyFailure;
+            if (legacyFailure.getMessage() != null && (legacyFailure.getMessage().startsWith("Conflicting ") || legacyFailure.getMessage().equals("Invalid Mumble credentials"))) throw legacyFailure;
             require(data.length > 0 && data.length <= MAX_ZIP, "Package size");
             // Stock VX can contain multicast channels and a different protobuf layout.
-            return portableJson(VxPackage.read(new ByteArrayInputStream(data)), "VX channels");
+            return VxPackage.missionJson(new ByteArrayInputStream(data));
         }
     }
 
@@ -107,8 +107,38 @@ public final class VoicePackageImporter {
         Object root = tokener.nextValue();
         require(root instanceof JSONObject && tokener.nextClean() == 0, "Invalid mission JSON");
         JSONObject obj = (JSONObject) root;
+        VoiceLogin.Fields fields = new VoiceLogin.Fields(obj);
+        VoiceMission parsed = metadata(obj);
+        return new VoiceMission(parsed.id, parsed.name, parsed.channels, fields.resolve(parsed.channels));
+    }
+
+    /** Fill only missing endpoint logins when preparing the selected mission for transfer. */
+    public static byte[] withAvailableLogins(byte[] missionJson,
+            java.util.function.Function<VoiceProfile, VoiceLogin> lookup) throws Exception {
+        VoiceMission mission = fromJson(missionJson);
+        JSONObject document = new JSONObject(new String(missionJson, StandardCharsets.UTF_8));
+        JSONArray channels = document.getJSONArray("channels");
+        Set<String> visited = new HashSet<>();
+        boolean changed = false;
+        for (int i = 0; i < mission.channels.size(); i++) {
+            VoiceProfile profile = mission.channels.get(i).profile();
+            if (profile.multicast() || mission.login(profile) != null || !visited.add(VoiceLogin.endpoint(profile))) continue;
+            VoiceLogin login = lookup.apply(profile);
+            if (login == null) continue;
+            JSONObject channel = channels.getJSONObject(i);
+            if (!login.username.isEmpty()) channel.put("username", login.username);
+            channel.put("password", login.password);
+            changed = true;
+        }
+        if (!changed) return missionJson;
+        byte[] result = document.toString().getBytes(StandardCharsets.UTF_8);
+        fromJson(result);
+        return result;
+    }
+
+    private static VoiceMission metadata(JSONObject obj) throws Exception {
         if (obj.has("voiceProfileVersion")) return portableMission(obj);
-        // Credentials/trust are deliberately outside a channel package.
+        // Credential fields have already been extracted. Trust material is not imported.
         require(keys(obj).equals(keys("missionId", "name", "channels", "missionType", "missionIP", "missionPort", "missionDefaultProtocol")), "Unexpected mission fields");
         String missionId = uuid(obj.getJSONObject("missionId").getString("uuid"));
         require(keys(obj.getJSONObject("missionId")).equals(keys("uuid")), "Unexpected identity fields");

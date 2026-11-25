@@ -568,7 +568,7 @@ class MainActivity : Activity() {
             val entries = mission.channels.map { it.profile() }
             val summary = entries.take(8).joinToString("\n") { "${it.label()} · ${it.endpoint()}" } +
                 if (entries.size > 8) "\n+${entries.size - 8} more" else ""
-            AlertDialog.Builder(this).setTitle("Review voice channels").setMessage(summary)
+            AlertDialog.Builder(this).setTitle("Review voice channels").setMessage(summary + if (mission.hasLogins()) "\nIncludes Mumble login for the listed server." else "")
                 .setNeutralButton("Close", null)
                 .setNegativeButton("Reject") { _, _ ->
                     runCatching { ChannelStore.review(this, incoming.transferId, false) }.onFailure { message("Could not reject the package.") }
@@ -578,7 +578,7 @@ class MainActivity : Activity() {
                         ChannelStore.review(this, incoming.transferId, true)
                         VoiceRuntime.onboardingStatus = ""
                         render()
-                        if (entries.size == 1) selectChannel(entries.single()) else chooseSavedChannel()
+                        if (entries.size == 1) selectChannel(entries.single(), mission.login(entries.single())) else chooseSavedChannel()
                     } catch (_: Exception) { message("Could not save channels.") }
                 }.show()
         } catch (_: Exception) { message("The incoming channel package could not be opened.") }
@@ -590,22 +590,24 @@ class MainActivity : Activity() {
             val mission = ChannelStore.active(this)?.let { VoicePackageImporter.fromJson(it.toByteArray()) } ?: return
             val options = mission.channels.map { it.profile() }
             AlertDialog.Builder(this).setTitle("Choose channel")
-                .setItems(options.map { it.label() + "\n" + it.endpoint() }.toTypedArray()) { _, which -> selectChannel(options[which]) }
+                .setItems(options.map { it.label() + "\n" + it.endpoint() }.toTypedArray()) { _, which -> selectChannel(options[which], mission.login(options[which])) }
                 .setNegativeButton("Cancel", null).show()
         } catch (_: Exception) { message("Could not open saved channels.") }
     }
 
-    private fun selectChannel(profile: VoiceProfile) {
+    private fun selectChannel(profile: VoiceProfile, login: se.takcampus.voice.VoiceLogin?) {
         try {
             if (profile.multicast()) LocalVoiceSettings.select(this, profile)
             else {
                 val old = SettingsStore.load(this)
                 val sameServer = profile.host().equals(old.host, true) && profile.port() == old.port
-                val account = if (sameServer) old else VoiceSettings()
+                val saved = if (sameServer) old else VoiceSettings()
+                val account = if (login == null) saved else saved.copy(username = login.username, password = login.password,
+                    credentialExpiresAt = 0)
                 SettingsStore.save(this, account.copy(host = profile.host(), port = profile.port(), defaultChannelId = profile.roomId(),
                     defaultChannelName = profile.roomName()))
                 LocalVoiceSettings.select(this, null)
-                if (!sameServer) {
+                if (!sameServer && login == null) {
                     render()
                     serverDialog()
                     return

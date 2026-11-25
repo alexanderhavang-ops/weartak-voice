@@ -47,7 +47,7 @@ The implementation is a development fork/proposal, not a claim that stock WearTA
 9. **Connect voice explicitly.** Use Voice's own configured Mumble login/TLS identity.
    If it is missing, offer Server & login or the existing acoustic setup flow.
    Importing channels does not connect, install trust, enroll a certificate, or
-   expose WearTAK's private keys. The package has no Mumble password.
+   expose WearTAK's private keys. The selected ZIP can supply a Mumble account or a shared server password. Companion preserves it. For a missing login, Companion can include a matching host’s saved ATAK account after the sender reviews the destination.
 
 ```mermaid
 flowchart TD
@@ -83,7 +83,7 @@ not needed for the standalone APK.
 | --- | --- | --- |
 | Existing TAK connection login/certificate | WearTAK's TAK connection and package download | Neither changed nor exposed to Voice |
 | VX mission/channel data | Shared Voice importer | Transferred and reviewed |
-| Mumble login, voice client identity and private CA | Voice's own TLS connection | Existing Voice setup or an explicit Voice setup step |
+| Mumble login, voice client identity and private CA | Voice's own TLS connection | The selected ZIP may supply a login. Client certificates and private CAs use Voice setup. |
 | Callsign/team/color | TAK identity/display | Separate from authentication; existing ATAK identity transfer remains independent |
 
 ## Capabilities and versions

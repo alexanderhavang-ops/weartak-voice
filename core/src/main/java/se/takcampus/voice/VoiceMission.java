@@ -9,7 +9,16 @@ public final class VoiceMission {
     public final String id, name;
     public final List<Channel> channels;
 
+    private final java.util.Map<String, VoiceLogin> logins;
+    public VoiceLogin login(VoiceProfile profile) { return profile.multicast() ? null : logins.get(VoiceLogin.endpoint(profile)); }
+    public boolean hasLogins() { return !logins.isEmpty(); }
+
     public VoiceMission(String id, String name, List<Channel> channels) {
+        this(id, name, channels, Collections.emptyMap());
+    }
+
+    VoiceMission(String id, String name, List<Channel> channels, java.util.Map<String, VoiceLogin> logins) {
+        this.logins = Collections.unmodifiableMap(logins);
         this.id = id;
         this.name = name;
         this.channels = Collections.unmodifiableList(channels);

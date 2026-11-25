@@ -15,14 +15,20 @@ object ChannelStore {
     private fun file(context: Context) = AtomicFile(File(context.filesDir, "voice-channels.json"))
     private fun read(context: Context): JSONObject {
         val target = file(context)
-        return try { JSONObject(String(target.readFully(), Charsets.UTF_8)) }
+        return try {
+            val stored = target.readFully()
+            val bytes = if (stored.firstOrNull() == 1.toByte()) SettingsStore.openChannels(stored) else stored
+            try { JSONObject(String(bytes, Charsets.UTF_8)) } finally { bytes.fill(0) }
+        }
         catch (_: java.io.FileNotFoundException) { JSONObject().put("receipts", JSONArray()) }
     }
     private fun write(context: Context, state: JSONObject) {
         val target = file(context)
         val stream = target.startWrite()
         try {
-            stream.write(state.toString().toByteArray(Charsets.UTF_8))
+            val bytes = state.toString().toByteArray(Charsets.UTF_8)
+            try { stream.write(if (state.optBoolean("sealed")) SettingsStore.sealChannels(bytes) else bytes) }
+            finally { bytes.fill(0) }
             target.finishWrite(stream)
         } catch (error: Exception) { target.failWrite(stream); throw error }
     }
@@ -43,6 +49,7 @@ object ChannelStore {
             }
         }
         if (state.has("pending")) throw PendingVoiceReviewException()
+        if (VoicePackageImporter.fromJson(incoming.missionJson).hasLogins()) state.put("sealed", true)
         state.put("pending", envelope)
         val bounded = JSONArray()
         for (i in maxOf(0, receipts.length() - 63) until receipts.length()) bounded.put(receipts.get(i))

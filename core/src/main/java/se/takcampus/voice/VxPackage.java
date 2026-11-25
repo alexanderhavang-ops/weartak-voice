@@ -29,7 +29,7 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
-/** Portable VX channel packages. Account credentials and trust never enter this format. */
+/** Portable VX channel packages and their optional endpoint-scoped Mumble logins. */
 public final class VxPackage {
     public static final String RECEIVE_ACTION = "com.atakmap.android.gbr.multicastvoice.sharing.downloaded";
     private static final String MANIFEST = "MANIFEST/manifest.xml";
@@ -40,6 +40,13 @@ public final class VxPackage {
     private VxPackage() {}
 
     public static List<VoiceProfile> read(InputStream input) throws Exception {
+        VoiceMission mission = VoicePackageImporter.fromJson(missionJson(input));
+        List<VoiceProfile> profiles = new ArrayList<>();
+        for (VoiceMission.Channel channel : mission.channels) profiles.add(channel.profile());
+        return profiles;
+    }
+
+    static byte[] missionJson(InputStream input) throws Exception {
         Map<String, byte[]> entries = new HashMap<>();
         int total = 0;
         try (ZipInputStream zip = new ZipInputStream(input)) {
@@ -79,9 +86,31 @@ public final class VxPackage {
                 legacy = path;
             }
         }
-        if (proto != null) return decodeProto(entries.get(proto));
-        if (legacy != null) return decodeLegacy(new JSONObject(new String(entries.get(legacy), StandardCharsets.UTF_8)));
-        throw new IOException("No VX channel profile was found.");
+        if (proto == null && legacy == null) throw new IOException("No VX channel profile was found.");
+        JSONObject json = legacy == null ? null : new JSONObject(new String(entries.get(legacy), StandardCharsets.UTF_8));
+        List<VoiceProfile> profiles = proto == null ? decodeLegacy(json) : decodeProto(entries.get(proto));
+        byte[] portable = VoicePackageImporter.portableJson(profiles, "VX channels");
+        if (json == null) return portable;
+        VoiceLogin.Fields fields = new VoiceLogin.Fields(json);
+        if (fields.common == null && fields.byId.isEmpty()) return portable;
+        List<VoiceMission.Channel> declaredChannels = new ArrayList<>();
+        for (VoiceProfile p : decodeLegacy(json)) declaredChannels.add(new VoiceMission.Channel(p));
+        Map<String, VoiceLogin> logins = fields.resolve(declaredChannels);
+        // A JSON credential may only accompany the same channel ID and Mumble endpoint in the binary profile.
+        JSONObject result = new JSONObject(new String(portable, StandardCharsets.UTF_8));
+        for (VoiceMission.Channel source : declaredChannels) {
+            VoiceLogin login = logins.get(VoiceLogin.endpoint(source.profile()));
+            if (login == null) continue;
+            int index = -1;
+            for (int i = 0; i < profiles.size(); i++) {
+                VoiceProfile p = profiles.get(i);
+                if (p.id().equals(source.profile().id()) && !p.multicast() &&
+                        VoiceLogin.endpoint(p).equals(VoiceLogin.endpoint(source.profile()))) index = i;
+            }
+            if (index < 0) throw VoiceLogin.invalid();
+            result.getJSONArray("channels").getJSONObject(index).put("username", login.username).put("password", login.password);
+        }
+        return result.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     private static List<String> declaredEntries(byte[] manifest) throws Exception {

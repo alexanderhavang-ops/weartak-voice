@@ -62,7 +62,7 @@ class VoicePackageClient(private val context: Context, private val hostPackage: 
             val bytes = requireNotNull(taken.getByteArray("payload"))
             try {
                 check(!closed && sessionLive()); require(bytes.size == size && VoiceHandoff.hash(bytes) == hash) { "Payload integrity failure" }
-                val json = if (kind == C.ZIP) VoicePackageImporter.jsonFromZip(bytes) else bytes.also { VoicePackageImporter.fromJson(it) }
+                val json = if (kind == C.ZIP) VoicePackageImporter.jsonFromZip(bytes) else VoiceHandoff.missionFromPayload(bytes)
                 val envelope = VoiceHandoff.encode(json, id)
                 check(!closed && sessionLive())
                 val status = ChannelStore.stage(context, envelope, hostPackage, hash)

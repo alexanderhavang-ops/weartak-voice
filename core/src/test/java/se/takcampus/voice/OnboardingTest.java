@@ -57,12 +57,49 @@ public class OnboardingTest {
         envelope.remove("password"); envelope.put("version", 2);
         assertThrows(Exception.class, () -> VoiceHandoff.decode(envelope.toString()));
     }
-    @Test public void unknownMissionFieldsRejected() throws Exception { rejected(new JSONObject(new String(json(), StandardCharsets.UTF_8)).put("password", "test-only").toString().getBytes(StandardCharsets.UTF_8)); }
+    @Test public void unknownMissionFieldsRejected() throws Exception { rejected(new JSONObject(new String(json(), StandardCharsets.UTF_8)).put("unknownSetting", "test-only").toString().getBytes(StandardCharsets.UTF_8)); }
     @Test public void unknownChannelFieldsRejected() throws Exception {
         JSONObject obj = new JSONObject(new String(json(), StandardCharsets.UTF_8));
-        obj.getJSONArray("channels").getJSONObject(0).put("password", "test-only");
+        obj.getJSONArray("channels").getJSONObject(0).put("unknownSetting", "test-only");
         rejected(obj.toString().getBytes(StandardCharsets.UTF_8));
     }
+    @Test public void credentialsTravelInZipAndSurviveHandoff() throws Exception {
+        for (String username : new String[]{"", "radio-user"}) {
+            JSONObject original = new JSONObject(new String(json(), StandardCharsets.UTF_8));
+            if (username.isEmpty()) original.put("mumblePassword", "shared-test");
+            else original.put("username", username).put("password", "account-test");
+            byte[] mission = original.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] preserved = VoicePackageImporter.withAvailableLogins(mission, p -> {
+                throw new AssertionError("Packaged login must take priority");
+            });
+            byte[] outgoing = VoiceHandoff.packageForTransfer(preserved);
+            JSONObject container = new JSONObject(new String(outgoing, StandardCharsets.UTF_8));
+            byte[] zip = java.util.Base64.getDecoder().decode(container.getString("voiceZip"));
+            assertTrue(VoicePackageImporter.fromZip(zip).hasLogins());
+            VoiceHandoff delivered = VoiceHandoff.decode(VoiceHandoff.encode(outgoing, UUID.randomUUID().toString()));
+            VoiceMission parsed = VoicePackageImporter.fromJson(delivered.missionJson);
+            for (VoiceMission.Channel channel : parsed.channels) {
+                VoiceLogin login = parsed.login(channel.profile());
+                assertEquals(username, login.username);
+                assertEquals(username.isEmpty() ? "shared-test" : "account-test", login.password);
+            }
+        }
+    }
+
+    @Test public void companionCanAddMissingLoginOnlyToMatchingEndpoint() throws Exception {
+        JSONObject source = new JSONObject(new String(json(), StandardCharsets.UTF_8));
+        source.getJSONArray("channels").getJSONObject(1).put("host", "other.example.org:64738");
+        byte[] data = source.toString().getBytes(StandardCharsets.UTF_8);
+        assertArrayEquals(data, VoicePackageImporter.withAvailableLogins(data, p -> null));
+        byte[] enriched = VoicePackageImporter.withAvailableLogins(data, p -> p.host().equals("voice.example.org")
+                ? new VoiceLogin("watch-test", "account-test") : null);
+        VoiceMission mission = VoicePackageImporter.fromJson(VoiceHandoff.missionFromPayload(VoiceHandoff.packageForTransfer(enriched)));
+        assertEquals("watch-test", mission.login(mission.channels.get(0).profile()).username);
+        assertNull(mission.login(mission.channels.get(1).profile()));
+        source.put("serverPassword", "ambiguous-test");
+        rejected(source.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
     @Test public void multicastRejected() throws Exception { changedChannel("isMumble", false); }
     @Test public void negativeIdRejected() throws Exception { changedChannel("serverChannelId", -1); }
     @Test public void fractionalIdRejected() throws Exception { changedChannel("serverChannelId", 1.5); }

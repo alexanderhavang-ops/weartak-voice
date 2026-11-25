@@ -23,7 +23,7 @@ names and DEV signing certificate](SDK_VOICE_PACKAGE_API_PROPOSAL.md). The norma
 sender is another ATAK user sharing channels in VX over GeoTalk; TAKS is an
 additional sender, not a required proprietary onboarding mechanism.
 
-Channel files contain no voice password. Voice owns its own authentication and
+Channel files may carry an endpoint-scoped Mumble account or a shared server password. Voice owns its own authentication and
 never retrieves WearTAK private keys. Full VX audio/feature compatibility and
 full device compatibility remain to be demonstrated. The standalone client exchanged
 voice with ATAK VX in both directions. A Galaxy Watch Ultra received a channel
