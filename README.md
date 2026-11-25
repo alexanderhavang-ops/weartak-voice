@@ -108,3 +108,5 @@ Debug applications use `.dev` IDs and separate storage. Release signing still us
 See [the companion contract and physical-device checks](docs/COMPANION_CAPABILITIES.md).
 
 The shared host staging API is implemented in our development host; stock hosts without it keep channel transfer disabled. See [the API request](docs/SDK_VOICE_PACKAGE_API_PROPOSAL.md) for signatures and package/signing details.
+
+[Release signing](docs/RELEASE-SIGNING.md) · [Phone and watch test card](docs/WATCH-TEST.md)

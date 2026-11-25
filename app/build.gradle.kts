@@ -1,7 +1,7 @@
 import java.security.MessageDigest
 
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
-val voiceVersion = "0.6.19"
+val voiceVersion = "0.6.20"
 val legacyDevBridge = providers.gradleProperty("legacyStandaloneDevBridge").orNull == "true"
 
 android {
@@ -11,8 +11,8 @@ android {
         applicationId = "se.takcampus.voice.standalone"
         minSdk = 30
         targetSdk = 34
-        manifestPlaceholders["voiceBindPermission"] = "com.weartak.plugin.permission.BIND_PLUGIN"
-        versionCode = 79
+        manifestPlaceholders["voiceBindPermission"] = "se.takcampus.voice.watch.permission.BIND_PLUGIN"
+        versionCode = 80
         versionName = voiceVersion
     }
     flavorDimensions += "integration"
@@ -39,7 +39,7 @@ android {
             keyPassword = System.getenv("VOICE_KEYSTORE_PASSWORD")
         }
     }
-    buildTypes { getByName("debug") { applicationIdSuffix = ".dev"; manifestPlaceholders["voiceBindPermission"] = "se.takcampus.voice.permission.BIND_PLUGIN_DEV" }; getByName("release") { isMinifyEnabled = false; signingConfig = signingConfigs.getByName("voiceRelease") } }
+    buildTypes { getByName("debug") { applicationIdSuffix = ".dev"; manifestPlaceholders["voiceBindPermission"] = "se.takcampus.voice.permission.BIND_PLUGIN_DEV" }; getByName("release") { isMinifyEnabled = false; if (System.getenv("VOICE_KEYSTORE_PATH") != null) signingConfig = signingConfigs.getByName("voiceRelease") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isIncludeAndroidResources = true }

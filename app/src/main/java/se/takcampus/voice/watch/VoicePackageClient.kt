@@ -16,14 +16,15 @@ private class VoicePackageReadException(val code: Int) : IllegalStateException("
 
 /** Shared by the real SDK wrapper and the standalone DEV adapter. Intake never starts audio. */
 class VoicePackageClient(private val context: Context, private val hostPackage: String,
-    private val hostUid: Int, private val control: IVoicePackageControlV1) {
+    private val hostUid: Int, private val control: IVoicePackageControlV1,
+    private val sessionLive: () -> Boolean = { true }) {
     private val worker = Executors.newSingleThreadExecutor { task -> Thread(task, "Voice-package-intake").apply { isDaemon = true } }
     private val busy = AtomicBoolean()
     @Volatile var ready = false; private set
     @Volatile private var closed = false
     private val receiver = object : IVoicePackageReceiverV1.Stub() {
         override fun onOffer(offer: Bundle?) {
-            check(Binder.getCallingUid() == hostUid && !closed) { "Foreign voice offer" }
+            check(Binder.getCallingUid() == hostUid && !closed && sessionLive()) { "Foreign voice offer" }
             requireNotNull(offer)
             val copy = Bundle(offer)
             if (!busy.compareAndSet(false, true)) {
@@ -32,7 +33,7 @@ class VoicePackageClient(private val context: Context, private val hostPackage: 
             worker.execute { try { receive(copy) } finally { busy.set(false) } }
         }
         override fun onRevoked(handle: String?, reason: Int) {
-            check(Binder.getCallingUid() == hostUid && !closed)
+            check(Binder.getCallingUid() == hostUid && !closed && sessionLive())
             VoiceRuntime.onboardingStatus = "Voice offer expired or revoked"; VoiceRuntime.changed()
         }
     }
@@ -47,7 +48,7 @@ class VoicePackageClient(private val context: Context, private val hostPackage: 
     }
     private fun receive(offer: Bundle) {
         try {
-            check(!closed)
+            check(!closed && sessionLive())
             require(offer.getInt("version") == 1)
             val id = requireNotNull(offer.getString("transferId")); require(UUID.fromString(id).toString() == id)
             val handle = requireNotNull(offer.getString("handle")); require(UUID.fromString(handle).toString() == handle)
@@ -60,9 +61,10 @@ class VoicePackageClient(private val context: Context, private val hostPackage: 
             if (taken.getInt("code", -1) != C.OK) throw VoicePackageReadException(taken.getInt("code", C.UNAVAILABLE))
             val bytes = requireNotNull(taken.getByteArray("payload"))
             try {
-                check(!closed); require(bytes.size == size && VoiceHandoff.hash(bytes) == hash) { "Payload integrity failure" }
+                check(!closed && sessionLive()); require(bytes.size == size && VoiceHandoff.hash(bytes) == hash) { "Payload integrity failure" }
                 val json = if (kind == C.ZIP) VoicePackageImporter.jsonFromZip(bytes) else bytes.also { VoicePackageImporter.fromJson(it) }
                 val envelope = VoiceHandoff.encode(json, id)
+                check(!closed && sessionLive())
                 val status = ChannelStore.stage(context, envelope, hostPackage, hash)
                 VoiceRuntime.onboardingStatus = "Voice package: $status"
                 VoiceRuntime.configRevision += 1; VoiceRuntime.changed()

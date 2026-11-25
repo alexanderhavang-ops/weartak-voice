@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <permission android:name="${voiceBindPermission}" android:protectionLevel="signature" />
+    <permission android:name="${voiceBindPermission}" android:protectionLevel="signature|knownSigner" android:knownCerts="@array/voice_host_certificates" />
     <application>
         <service android:name=".VoicePluginService" android:exported="true" android:permission="${voiceBindPermission}">
             <intent-filter><action android:name="com.weartak.plugin.action.PLUGIN_SERVICE" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>

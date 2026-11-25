@@ -1,0 +1,77 @@
+name: Sign WearTAK Voice plugin
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build the pinned SDK, run core tests and assemble the unsigned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          python3 ci/build_plugin_sdk.py
+          ./gradlew --no-daemon :core:test :app:assemblePluginRelease
+          cp app/build/outputs/apk/plugin/release/*-unsigned.apk "$RUNNER_TEMP/voice-unsigned.apk"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-plugin
+          path: ${{ runner.temp }}/voice-unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    needs: build
+    environment: voice-release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-plugin
+          path: ${{ runner.temp }}/input
+      - name: Install Android verification tools
+        run: sdkmanager "build-tools;34.0.0"
+      - name: Sign and verify package and certificate
+        shell: bash
+        env:
+          SIGNING_BUNDLE: ${{ secrets.VOICE_RELEASE_SIGNING }}
+        run: |
+          set -euo pipefail
+          umask 077
+          cd "$RUNNER_TEMP"
+          trap 'rm -f voice-release.p12 key-password' EXIT
+          python3 - <<'PY'
+          import base64, json, os, pathlib
+          bundle = json.loads(os.environ["SIGNING_BUNDLE"])
+          pathlib.Path("voice-release.p12").write_bytes(base64.b64decode(bundle["p12"], validate=True))
+          pathlib.Path("key-password").write_text(bundle["password"] + "\n")
+          PY
+          unset SIGNING_BUNDLE
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          apk=input/voice-unsigned.apk
+          pkg=$("$tools/aapt" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          test "$pkg" = se.takcampus.voice.watch
+          "$tools/zipalign" -c 4 "$apk"
+          "$tools/apksigner" sign --ks voice-release.p12 --ks-key-alias weartak-voice \
+            --ks-pass file:key-password --out WearTAK-Voice-Plugin-release.apk "$apk"
+          "$tools/apksigner" verify --verbose --print-certs WearTAK-Voice-Plugin-release.apk > signer.txt
+          grep 'Signer #1 certificate SHA-256 digest:' signer.txt
+          printf 'Package %s\nSource commit %s\n' "$pkg" "$GITHUB_SHA" >> signer.txt
+          sha256sum WearTAK-Voice-Plugin-release.apk >> signer.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed-voice-plugin
+          path: |
+            ${{ runner.temp }}/WearTAK-Voice-Plugin-release.apk
+            ${{ runner.temp }}/signer.txt
+          if-no-files-found: error

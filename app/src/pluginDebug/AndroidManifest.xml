@@ -1,7 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-    <permission android:name="${voiceBindPermission}"
-        android:protectionLevel="signature|knownSigner"
-        android:knownCerts="@array/voice_dev_host_certificates"
-        tools:replace="android:protectionLevel" />
-</manifest>
