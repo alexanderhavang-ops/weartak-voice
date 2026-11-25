@@ -1,6 +1,11 @@
 name: Sign WearTAK Voice plugin
 on:
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Full 40-character commit SHA from the reviewed Voice PR or main"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,8 +15,13 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
+      - name: Verify source revision format
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: '[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]'
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - name: Build the pinned SDK, run core tests and assemble the unsigned release
         shell: bash
@@ -44,6 +54,7 @@ jobs:
       - name: Sign and verify package and certificate
         shell: bash
         env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
           SIGNING_BUNDLE: ${{ secrets.VOICE_RELEASE_SIGNING }}
         run: |
           set -euo pipefail
@@ -66,7 +77,7 @@ jobs:
             --ks-pass file:key-password --out WearTAK-Voice-Plugin-release.apk "$apk"
           "$tools/apksigner" verify --verbose --print-certs WearTAK-Voice-Plugin-release.apk > signer.txt
           grep 'Signer #1 certificate SHA-256 digest:' signer.txt
-          printf 'Package %s\nSource commit %s\n' "$pkg" "$GITHUB_SHA" >> signer.txt
+          printf 'Package %s\nSource commit %s\n' "$pkg" "$SOURCE_SHA" >> signer.txt
           sha256sum WearTAK-Voice-Plugin-release.apk >> signer.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

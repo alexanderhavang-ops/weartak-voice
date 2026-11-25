@@ -29,7 +29,7 @@ android {
         }
     }
     if (!legacyDevBridge) {
-        sourceSets.getByName("standaloneDebug").manifest.srcFile("src/standaloneWifiDebug/AndroidManifest.xml")
+        sourceSets.maybeCreate("standaloneDebug").manifest.srcFile("src/standaloneWifiDebug/AndroidManifest.xml")
     }
     signingConfigs {
         create("voiceRelease") {
@@ -44,7 +44,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
-androidComponents.onVariants(selector().withBuildType("debug").withFlavor("integration" to "standalone")) { variant ->
+androidComponents.onVariants(androidComponents.selector().withBuildType("debug").withFlavor("integration" to "standalone")) { variant ->
     if (!legacyDevBridge) variant.applicationId.set("se.takcampus.voice.standalone.wifi.dev")
     variant.outputs.forEach { it.versionName.set("$voiceVersion-dev") }
 }
