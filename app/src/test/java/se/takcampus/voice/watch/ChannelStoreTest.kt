@@ -33,6 +33,39 @@ class ChannelStoreTest {
         ChannelStore.review(context, id, false)
         assertEquals("REJECTED", ChannelStore.receipt(context, id)); assertNull(ChannelStore.active(context))
     }
+    @Test fun clearConfigRemovesSetupsAndControlsButKeepsDiagnosticsAndInstallationIdentity() {
+        val controls = context.getSharedPreferences("watch-test-controls", 0)
+        controls.edit().putBoolean("backToggle", true).putInt("pttButton", 4).commit()
+        val local = context.getSharedPreferences("voice-local", 0)
+        local.edit().putString("uid", "installation").putString("callsign", "test").putString("channel", "old").commit()
+        context.getSharedPreferences("ptt", 0).edit().putString("headset", "toggle").commit()
+        context.getSharedPreferences(VoiceService.SESSION_PREFS, 0).edit().putBoolean(VoiceService.PHONE_CALL, true).commit()
+        val history = context.getSharedPreferences("mumble_socket_history", 0)
+        history.edit().putString("flows", "previous").commit()
+        val id = UUID.randomUUID().toString()
+        val hash = VoiceHandoff.hash(mission)
+        ChannelStore.stage(context, VoiceHandoff.encode(mission, id))
+        ChannelStore.review(context, id, true)
+        val pending = UUID.randomUUID().toString()
+        ChannelStore.stage(context, VoiceHandoff.encode(mission, pending), "test.host", hash)
+        context.getFileStreamPath("voice-settings.vault").writeText("unreadable test data")
+
+        repeat(2) { clearVoiceConfig(context, controls) }
+
+        assertTrue(SettingsStore.load(context).host.isEmpty())
+        assertNull(ChannelStore.active(context))
+        assertNull(ChannelStore.pending(context))
+        assertEquals("REJECTED", ChannelStore.receipt(context, pending))
+        assertEquals("UNKNOWN", ChannelStore.receipt(context, id))
+        assertEquals("installation", LocalVoiceSettings.uid(context))
+        assertEquals("WearTAK", LocalVoiceSettings.callsign(context))
+        assertNull(LocalVoiceSettings.load(context))
+        assertFalse(VoiceService.phoneCallRequested(context))
+        assertTrue(controls.all.isEmpty())
+        assertTrue(context.getSharedPreferences("ptt", 0).all.isEmpty())
+        assertEquals("previous", history.getString("flows", ""))
+        assertEquals("STAGED", ChannelStore.stage(context, VoiceHandoff.encode(mission, id)))
+    }
     @Test fun transferIdCannotBeReusedForDifferentContents() {
         val id = UUID.randomUUID().toString(); ChannelStore.stage(context, VoiceHandoff.encode(mission, id))
         val changed = org.json.JSONObject(String(mission)).put("name", "OTHER").toString().toByteArray()

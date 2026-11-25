@@ -480,9 +480,11 @@ class MainActivity : Activity() {
             "Certificates and trust", "Choose watch PTT button", "Headset PTT",
             "Mumble phone call mode · ${if (VoiceService.phoneCallRequested(this)) "On" else "Off"}")
         if (packageName == "se.takcampus.voice.standalone.dev") options.add("Link to WearTAK Dev")
+        options.add("Clear all config")
         AlertDialog.Builder(this).setTitle("Voice setup")
             .setItems(options.toTypedArray()) { _, which ->
                 when (which) {
+                    options.lastIndex -> confirmClearConfig()
                     0 -> pairOverWifi()
                     1 -> listenForSetup()
                     2 -> AlertDialog.Builder(this).setTitle("Connection type")
@@ -505,6 +507,32 @@ class MainActivity : Activity() {
                     } catch (_: Exception) { message("Install the matching WearTAK Dev build to link it.") }
                 }
             }.setNegativeButton("Close", null).show()
+    }
+
+    private fun confirmClearConfig() {
+        AlertDialog.Builder(this).setTitle("Clear all config?")
+            .setMessage("Remove this Voice app’s servers, logins, certificates, callsign, channels, PTT assignments and call-mode setting? Connection history is kept.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Clear") { _, _ ->
+                if (VoiceRuntime.serviceRunning || VoiceRuntime.active()) {
+                    message("Disconnect Voice before clearing configuration.")
+                    return@setPositiveButton
+                }
+                setup?.close()
+                wifiPairingDialog?.dismiss()
+                releasePtt()
+                val reset = runCatching { clearVoiceConfig(this, getPreferences(MODE_PRIVATE)) }
+                backToggle = getPreferences(MODE_PRIVATE).getBoolean("backToggle", false)
+                pttButton.assign(savedButton())
+                updateBackCallback()
+                VoiceRuntime.onboardingStatus = ""
+                VoiceRuntime.configRevision++
+                render()
+                if (reset.isSuccess) {
+                    Toast.makeText(this, "Voice configuration cleared", Toast.LENGTH_SHORT).show()
+                    setupMenu()
+                } else message("Could not finish clearing Voice configuration. Try Clear all config again.")
+            }.show()
     }
 
     private fun chooseHeadsetPtt() {

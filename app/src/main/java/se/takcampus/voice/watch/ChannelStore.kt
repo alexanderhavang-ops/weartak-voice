@@ -59,6 +59,22 @@ object ChannelStore {
         write(context, state)
         return "STAGED"
     }
+    @Synchronized fun clearConfig(context: Context) {
+        // Preserve only host receipt metadata so an outstanding review can be closed on the sender.
+        // Even an unreadable vault must allow the user to start over.
+        val previous = runCatching { read(context).getJSONArray("receipts") }.getOrElse { JSONArray() }
+        val receipts = JSONArray()
+        for (i in 0 until previous.length()) {
+            val receipt = previous.getJSONObject(i)
+            if (!receipt.has("hostPackage")) continue
+            if (receipt.optString("status") == "STAGED") receipt.put("status", "REJECTED")
+            receipts.put(receipt)
+        }
+        write(context, JSONObject().put("receipts", receipts))
+        context.getSystemService(android.app.NotificationManager::class.java)?.cancel(2)
+        VoiceRuntime.receiptSync?.invoke()
+    }
+
     @Synchronized fun hostReceipts(context: Context, hostPackage: String): List<JSONObject> {
         val receipts = read(context).getJSONArray("receipts")
         return (0 until receipts.length()).map { receipts.getJSONObject(it) }

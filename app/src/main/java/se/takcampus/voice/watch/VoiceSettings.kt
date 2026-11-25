@@ -79,6 +79,12 @@ object SettingsStore {
     }
 
     private fun file(context: Context) = AtomicFile(File(context.filesDir, "voice-settings.vault"))
+    @Synchronized fun clear(context: Context) {
+        val target = file(context)
+        target.delete()
+        check(!target.baseFile.exists() && !File(target.baseFile.path + ".bak").exists()) { "Could not remove saved Voice settings" }
+    }
+
     @Synchronized fun load(context: Context): VoiceSettings {
         val bytes = try { file(context).readFully() } catch (_: java.io.FileNotFoundException) { return VoiceSettings() }
         require(bytes.size in 30..524288 && bytes[0] == 1.toByte())
@@ -110,4 +116,16 @@ object SettingsStore {
         try { stream.write(encrypted); target.finishWrite(stream) }
         catch (error: Exception) { target.failWrite(stream); throw error }
     }
+}
+
+
+// The generated installation UID also identifies the watch during enrollment.
+internal fun clearVoiceConfig(context: Context, watchControls: android.content.SharedPreferences) {
+    SettingsStore.clear(context)
+    ChannelStore.clearConfig(context)
+    check(context.getSharedPreferences("voice-local", Context.MODE_PRIVATE).edit()
+        .remove("callsign").remove("channel").commit())
+    check(context.getSharedPreferences("ptt", Context.MODE_PRIVATE).edit().clear().commit())
+    check(context.getSharedPreferences(VoiceService.SESSION_PREFS, Context.MODE_PRIVATE).edit().clear().commit())
+    check(watchControls.edit().remove("pttButton").remove("backToggle").commit())
 }
