@@ -1,0 +1,6 @@
+<resources>
+    <!-- WearTAK 5.8.4-companion-pause-test1 DEV, armeabi-v7a. -->
+    <string-array name="voice_dev_host_certificates">
+        <item>0872AC7F6F5F526802F290F1B8494D58F41172C30B49E9FE63094C3775267B23</item>
+    </string-array>
+</resources>

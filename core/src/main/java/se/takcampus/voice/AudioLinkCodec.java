@@ -7,7 +7,7 @@ import java.util.Arrays;
 import java.util.function.Consumer;
 import java.util.zip.CRC32;
 
-/** WTK1 acoustic transport: short HTTPS link only, not credentials. See docs/AUDIO_ONBOARDING.md. */
+/** WTK1 acoustic transport for short HTTPS links and credential-free channel data. */
 public final class AudioLinkCodec {
     public static final int RATE = 48000, SLOT = 144, MAX_LINK = 384, CHUNK = 32, FRAME = 44;
     private static final int SYNC = 0xD391C5A7;
@@ -61,6 +61,12 @@ public final class AudioLinkCodec {
         private int transfer, total, count;
         private final byte[][] chunks = new byte[12][];
         private boolean done;
+        public int expectedFrames() { return count; }
+        public int receivedFrames() {
+            int received = 0;
+            for (int i = 0; i < count; i++) if (chunks[i] != null) received++;
+            return received;
+        }
         public Decoder(Consumer<String> complete) {
             this.complete = complete;
             for (int i = 0; i < phases.length; i++) phases[i] = new Phase(i * SLOT / phases.length);

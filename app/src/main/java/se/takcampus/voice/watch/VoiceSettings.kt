@@ -24,6 +24,8 @@ data class VoiceSettings(
     val displayName: String = "", val setupChannels: String = "", val defaultChannelId: Int = -1,
     val defaultChannelName: String = "", val credentialExpiresAt: Long = 0,
 ) {
+    fun mumbleName(context: Context): String = username.ifBlank { LocalVoiceSettings.mumbleGuestName(context) }
+
     fun tls(): SSLContext {
         val keyManagers = identity?.let { bytes ->
             val store = KeyStore.getInstance("PKCS12"); val pass = identityPassword.toCharArray()

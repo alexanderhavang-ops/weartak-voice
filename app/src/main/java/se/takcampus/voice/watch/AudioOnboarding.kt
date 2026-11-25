@@ -5,14 +5,19 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.view.WindowManager
 import android.widget.TextView
 import org.json.JSONObject
 import se.takcampus.voice.AudioLinkCodec
+import se.takcampus.voice.AudioSetupPayload
 import se.takcampus.voice.OnboardingLink
+import se.takcampus.voice.VoiceHandoff
 import se.takcampus.voice.VoicePackageImporter
+import java.net.URI
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
 
@@ -34,7 +39,10 @@ class AudioOnboarding(private val activity: Activity, private val accepted: () -
                 val min = AudioRecord.getMinBufferSize(48000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
                 require(min > 0)
                 check(activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                val input = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.UNPROCESSED)
+                val manager = activity.getSystemService(AudioManager::class.java)
+                val source = if (manager?.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true")
+                    MediaRecorder.AudioSource.UNPROCESSED else MediaRecorder.AudioSource.VOICE_RECOGNITION
+                val input = AudioRecord.Builder().setAudioSource(source)
                     .setAudioFormat(AudioFormat.Builder().setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setBufferSizeInBytes(maxOf(min, 8192)).build()
                 recorder = input
@@ -43,9 +51,18 @@ class AudioOnboarding(private val activity: Activity, private val accepted: () -
                     if (stopped.get()) return@Thread
                     input.startRecording()
                     val pcm = ShortArray(2048); val deadline = System.nanoTime() + 60_000_000_000L
+                    var previous = 0
                     while (!stopped.get() && found == null && System.nanoTime() < deadline) {
                         val n = input.read(pcm, 0, pcm.size)
                         check(n > 0); decoder.feed(pcm, n)
+                        val received = decoder.receivedFrames()
+                        if (received != previous && received > 0) {
+                            previous = received
+                            val total = decoder.expectedFrames()
+                            activity.runOnUiThread {
+                                if (!stopped.get()) text.text = "Receiving setup sound… $received of $total"
+                            }
+                        }
                     }
                 } finally {
                     recorder = null
@@ -56,12 +73,60 @@ class AudioOnboarding(private val activity: Activity, private val accepted: () -
                     if (stopped.get() || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
                     dialog?.dismiss()
                     if (found == null) message("No setup sound received. Move the phone closer, raise media volume and try again.")
-                    else try { confirm(OnboardingLink.parse(found!!)) } catch (_: Exception) { message("That sound did not contain a supported HTTPS setup link.") }
+                    else try { receive(found!!) } catch (_: Exception) { message("That sound did not contain a supported voice setup.") }
                 }
             } catch (_: Exception) {
                 if (!stopped.get()) activity.runOnUiThread { dialog?.dismiss(); message("Could not listen. Check microphone permission and try again.") }
             }
         }, "voice-setup-listener").start()
+    }
+
+    private fun receive(value: String) {
+        if (AudioSetupPayload.isChannel(value)) {
+            val channel = AudioSetupPayload.channel(value)
+            stage(VoicePackageImporter.portableJson(listOf(channel), channel.label()))
+            return
+        }
+        val ticket = runCatching { OnboardingLink.parse(value) }.getOrNull()
+        if (ticket != null) confirm(ticket)
+        else confirmZip(AudioSetupPayload.zipUri(value))
+    }
+
+    private fun confirmZip(uri: URI) {
+        AlertDialog.Builder(activity).setTitle("Download voice channels?")
+            .setMessage("Download a channel ZIP from ${uri.host}. You can review the channels before saving.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Download") { _, _ ->
+                val progress = AlertDialog.Builder(activity).setMessage("Downloading voice channels…").setCancelable(false).show()
+                Thread {
+                    val result = runCatching {
+                        val connection = uri.toURL().openConnection() as HttpsURLConnection
+                        try {
+                            connection.instanceFollowRedirects = false
+                            connection.connectTimeout = 10_000
+                            connection.readTimeout = 10_000
+                            connection.useCaches = false
+                            connection.setRequestProperty("Accept", "application/zip, application/octet-stream")
+                            check(connection.responseCode == 200) { "The server did not return a ZIP." }
+                            val zip = connection.inputStream.use { VoicePackageImporter.readBounded(it, VoicePackageImporter.MAX_ZIP) }
+                            VoicePackageImporter.jsonFromZip(zip)
+                        } finally { connection.disconnect() }
+                    }
+                    activity.runOnUiThread {
+                        progress.dismiss()
+                        if (!activity.isFinishing && !activity.isDestroyed) {
+                            result.onSuccess(::stage).onFailure { message("Could not download a voice channel ZIP. Check the link and Wi-Fi.") }
+                        }
+                    }
+                }.start()
+            }.show()
+    }
+
+    private fun stage(json: ByteArray) {
+        try {
+            ChannelStore.stage(activity, VoiceHandoff.encode(json, UUID.randomUUID().toString()))
+            accepted()
+        } catch (_: PendingVoiceReviewException) { message("Review the existing voice setup first.") }
+        catch (_: Exception) { message("Could not save the incoming channels for review.") }
     }
     private fun confirm(link: OnboardingLink) {
         if (activity.isFinishing || activity.isDestroyed) return
@@ -91,7 +156,7 @@ class AudioOnboarding(private val activity: Activity, private val accepted: () -
                     AlertDialog.Builder(activity).setTitle("Use this voice setup?")
                         .setMessage("${config.displayName}\n${config.host}:${config.port}\n\n${config.setupChannels}\n\nThis replaces your saved voice login and uses public TLS trust.")
                         .setNegativeButton("Cancel", null).setPositiveButton("Accept") { _, _ ->
-                            try { SettingsStore.save(activity, config); accepted() }
+                            try { SettingsStore.save(activity, config); LocalVoiceSettings.select(activity, null); accepted() }
                             catch (_: Exception) { message("Could not save setup. Existing settings were preserved.") }
                         }.show()
                 }

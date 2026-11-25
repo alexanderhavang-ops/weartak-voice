@@ -1,10 +1,15 @@
 # WearTAK Voice
 
-A **standalone Wear OS Mumble app** for watch-based push-to-talk and TAKS channel onboarding.
-It runs independently of WearTAK and ATAK, using its own microphone, speaker and network
-connection. WearTAK installation, plugin loading and upstream signing keys are not required.
+## 0.6 watch preview
 
-> **0.3 audio onboarding alpha:** connection, channel controls and Android audio paths are implemented.
+The WearTAK SDK plugin and standalone watch app share the same push-to-talk screen and onboarding. Use **Voice setup** for Wi-Fi pairing, manual Mumble or local multicast, sound, and VX ZIP import. Use **Review received channels** for a package sent with the ATAK Companion. See [voice setup and device tests](docs/VOICE_SETUP.md).
+
+A **Wear OS Mumble app** for watch push-to-talk and TAKS/VX channel onboarding.
+The `standalone` variant works independently. The optional `plugin` variant also registers with
+WearTAK and receives reviewed channel handoffs from our compatible development host.
+Both use the app's own audio, network connection and voice credentials.
+
+> **0.4 capabilities / PTT alpha:** connection, channel controls and Android audio paths are implemented.
 > The network core has been tested against a real local Mumble server. Physical-watch microphone,
 > speaker, headset and background behaviour have not yet been verified.
 
@@ -38,10 +43,10 @@ Certificate login requires an identity available to this app and accepted by the
 ## Build and test
 
 Requires JDK 17 and Android SDK platform/build tools 34. Set `ANDROID_HOME`.
-No WearTAK SDK checkout is needed.
+The standalone build needs no WearTAK SDK checkout.
 
 ```bash
-./gradlew :core:test :app:assembleDebug
+./gradlew :core:test :app:assembleStandaloneDebug
 ```
 
 Normal unit tests need no server or TAKS checkout. Real-server tests are opt-in:
@@ -77,3 +82,29 @@ No GitHub Actions or deployment pipeline is required.
 Original code is GPL-3.0-or-later; see [LICENSE](LICENSE). Dependencies retain their own
 terms. Gradle wrapper files retain their upstream Apache-2.0 notices. No WearTAK SDK AAR,
 upstream signing key, real operator package or private server configuration is bundled.
+
+## Companion/plugin development build
+
+The standalone path remains available:
+
+```sh
+./gradlew :core:test :app:assembleStandaloneDebug
+```
+
+For the plugin variant, first build the immutable SDK source pin (JDK 17, Android SDK 34), then:
+
+```sh
+python ci/build_plugin_sdk.py
+./gradlew :app:testPluginDebugUnitTest :app:assemblePluginDebug
+```
+
+SDK hashes remain enforced. `-PweartakSdkAar=/absolute/path/to/verified.aar` can reuse the same
+combined pinned artifact. Release follows the upstream template's signature binding permission. Matching DEV builds use
+an isolated signature permission (`se.takcampus.voice.permission.BIND_PLUGIN_DEV`), admitted only
+by the debug host for the Voice DEV package. This avoids permission-owner conflicts with an older
+installed voice prototype. The plugin DEV bind permission also recognizes the 5.8.4-companion-pause-test1 DEV host certificate on Android 12 and later.
+Debug applications use `.dev` IDs and separate storage. Release signing still uses your own keystore.
+
+See [the companion contract and physical-device checks](docs/COMPANION_CAPABILITIES.md).
+
+The shared host staging API is implemented in our development host; stock hosts without it keep channel transfer disabled. See [the API request](docs/SDK_VOICE_PACKAGE_API_PROPOSAL.md) for signatures and package/signing details.

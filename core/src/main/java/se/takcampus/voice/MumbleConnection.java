@@ -38,6 +38,35 @@ public final class MumbleConnection implements Closeable {
     private volatile State state = State.CLOSED;
     private volatile boolean closed, blocked;
     private volatile Socket socket;
+    private volatile boolean retryableFailure;
+    private volatile long connectedAt, bytesIn, bytesOut;
+    private volatile String localIp = "", remoteIp = "";
+    public boolean isRetryableFailure() { return retryableFailure; }
+    public long connectedAt() { return connectedAt; }
+    // Recent Mumble control events in wall time for comparison with server logs.
+    private final PingTimes ticks = new PingTimes(), writes = new PingTimes(), replies = new PingTimes();
+    private static final class PingTimes {
+        private final long[] samples = new long[48];
+        private int next, size;
+        synchronized void record() {
+            samples[next] = System.currentTimeMillis();
+            next = (next + 1) % samples.length;
+            size = Math.min(size + 1, samples.length);
+        }
+        synchronized long[] snapshot() {
+            long[] result = new long[size];
+            for (int i = 0; i < size; i++)
+                result[i] = samples[(next - size + i + samples.length) % samples.length];
+            return result;
+        }
+    }
+    public long[] pingTicks() { return ticks.snapshot(); }
+    public long[] pingWrites() { return writes.snapshot(); }
+    public long[] pingReplies() { return replies.snapshot(); }
+    public long bytesIn() { return bytesIn; }
+    public long bytesOut() { return bytesOut; }
+    public String localIp() { return localIp; }
+    public String remoteIp() { return remoteIp; }
     private volatile int self = -1, joined = -1, requested = -1;
     private long epoch, sequence;
     private boolean transmitting;
@@ -66,6 +95,9 @@ public final class MumbleConnection implements Closeable {
             Socket raw = new Socket(); socket = raw;
             if (closed) { raw.close(); return; }
             raw.connect(new InetSocketAddress(host, port), 10000);
+            localIp = raw.getLocalAddress().getHostAddress();
+            remoteIp = raw.getInetAddress().getHostAddress();
+            connectedAt = System.currentTimeMillis();
             SSLSocket secured = (SSLSocket) tls.getSocketFactory().createSocket(raw, host, port, true);
             socket = secured;
             if (closed) { secured.close(); return; }
@@ -78,11 +110,21 @@ public final class MumbleConnection implements Closeable {
             control(0, MumbleWire.join(MumbleWire.integer(1, 0x10300), MumbleWire.text(2, "WearTAK Voice 0.2"), MumbleWire.text(3, "Wear OS")));
             control(2, MumbleWire.join(MumbleWire.text(1, username), MumbleWire.text(2, password), MumbleWire.integer(5, 1)));
             password = "";
-            timer.scheduleAtFixedRate(() -> { try { control(3, MumbleWire.integer(1, System.nanoTime() / 1000)); } catch (Exception e) { fail("Connection lost"); } }, 5, 5, TimeUnit.SECONDS);
-            timer.schedule(() -> { if (self < 0 && !closed) fail("Login timed out"); }, 15, TimeUnit.SECONDS);
-            while (!closed) handle(MumbleWire.read(secured.getInputStream()));
-        } catch (SSLException e) { fail("TLS failed: check server hostname, trust and client certificate"); }
-        catch (Exception e) { if (!closed) fail("Connection failed or closed by server"); }
+            timer.scheduleAtFixedRate(() -> { ticks.record(); try { control(3, MumbleWire.integer(1, System.nanoTime() / 1000)); } catch (Exception e) { transportFailed("Could not queue Mumble keepalive"); } }, 5, 5, TimeUnit.SECONDS);
+            timer.schedule(() -> { if (self < 0 && !closed) transportFailed("Login timed out"); }, 15, TimeUnit.SECONDS);
+            while (!closed) {
+                MumbleWire.Frame frame = MumbleWire.read(secured.getInputStream());
+                bytesIn += 6L + frame.body.length;
+                handle(frame);
+            }
+        } catch (SSLHandshakeException e) { fail("TLS handshake failed. Check server identity and certificates"); }
+        catch (SSLException e) { transportFailed("TLS connection failed (" + e.getClass().getSimpleName() + ")"); }
+        catch (UnknownHostException e) { transportFailed("Server name lookup failed"); }
+        catch (SocketTimeoutException e) { transportFailed(state == State.CONNECTING ? "Connection setup timed out" : "No server data for 35 seconds"); }
+        catch (ConnectException e) { transportFailed("Could not establish TCP connection to server"); }
+        catch (EOFException e) { transportFailed("Mumble stream ended (EOF)"); }
+        catch (SocketException e) { transportFailed("TCP connection lost (" + e.getClass().getSimpleName() + ")"); }
+        catch (Exception e) { if (!closed) fail("Mumble connection failed (" + e.getClass().getSimpleName() + ")"); }
         finally { finish(); }
     }
     private void writeLoop(SSLSocket secured) {
@@ -94,8 +136,10 @@ public final class MumbleConnection implements Closeable {
                     if (p.epoch >= 0 && (!transmitting || p.epoch != epoch || p.expires < System.nanoTime())) continue;
                 }
                 MumbleWire.write(secured.getOutputStream(), p.type, p.body);
+                if (p.type == 3) writes.record();
+                bytesOut += 6L + p.body.length;
             }
-        } catch (Exception e) { if (!closed) fail("Connection lost"); }
+        } catch (Exception e) { if (!closed) transportFailed("Mumble send failed (" + e.getClass().getSimpleName() + ")"); }
     }
     private void control(int type, byte[] body) throws IOException {
         if (closed || !output.offer(new Pending(type, body, -1, Long.MAX_VALUE))) throw new IOException("Connection output unavailable");
@@ -110,6 +154,7 @@ public final class MumbleConnection implements Closeable {
         }
         MumbleWire.Fields f = new MumbleWire.Fields(frame.body);
         switch (frame.type) {
+            case 3: replies.record(); break;
             case 4:
                 int reason = f.has(1) ? f.id(1) : 0;
                 fail(reason == 3 || reason == 4 ? "Login rejected: password or identity" : reason == 5 ? "Username already in use" : reason == 7 ? "Server requires a client certificate" : "Login rejected by server (code " + reason + ")"); break;
@@ -150,10 +195,11 @@ public final class MumbleConnection implements Closeable {
                     if (blocked) { endTransmission(); update(state, "Server has muted or restricted your voice"); }
                     if (f.has(5)) {
                         int actual = f.id(5);
-                        if (actual != joined) endTransmission();
+                        boolean moved = actual != joined;
+                        if (moved) endTransmission();
                         joined = actual;
                         if (requested == actual) { requested = -1; update(State.READY, channelLabel(actual)); }
-                        else if (state == State.READY) update(State.CONNECTED, "Channel changed — confirm selection");
+                        else if (moved && state == State.READY) update(State.CONNECTED, "Channel changed — confirm selection");
                     }
                 }
                 break;
@@ -211,7 +257,18 @@ public final class MumbleConnection implements Closeable {
         }
     }
     private void update(State next, String detail) { if (!closed) { state = next; listener.state(next, detail); } }
-    private void fail(String detail) { if (!closed) { state = State.ERROR; listener.state(State.ERROR, detail); finish(); } }
+    private void transportFailed(String detail) { fail(detail, true); }
+    private void fail(String detail) { fail(detail, false); }
+    private void fail(String detail, boolean retryable) {
+        synchronized (this) {
+            if (closed || state == State.ERROR) return;
+            retryableFailure = retryable;
+            state = State.ERROR;
+            closed = true;
+        }
+        listener.state(State.ERROR, detail);
+        finish();
+    }
     private void finish() {
         closed = true; password = "";
         synchronized (voiceLock) { transmitting = false; epoch++; output.clear(); }
