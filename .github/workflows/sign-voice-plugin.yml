@@ -29,7 +29,7 @@ jobs:
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
           python3 ci/build_plugin_sdk.py
           ./gradlew --no-daemon :core:test :app:assemblePluginRelease
           cp app/build/outputs/apk/plugin/release/*-unsigned.apk "$RUNNER_TEMP/voice-unsigned.apk"
@@ -50,7 +50,7 @@ jobs:
           name: unsigned-plugin
           path: ${{ runner.temp }}/input
       - name: Install Android verification tools
-        run: sdkmanager "build-tools;34.0.0"
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0"'
       - name: Sign and verify package and certificate
         shell: bash
         env:
