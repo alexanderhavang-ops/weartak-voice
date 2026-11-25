@@ -1,0 +1,7 @@
+<resources>
+    <!-- WearTAK release APK, TAK.gov job 8034608, verified by its maintainer. -->
+    <string name="voice_host_package" translatable="false">com.aitech.weartak_civ</string>
+    <string-array name="voice_host_certificates">
+        <item>1579B600CD84E619E76A91C2DB6B031938C999BC2AAD926B9A51EC2B166D348D</item>
+    </string-array>
+</resources>

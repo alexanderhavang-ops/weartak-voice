@@ -1,0 +1,3 @@
+<resources>
+    <string name="connection_status">%1$s\n%2$s</string>
+</resources>

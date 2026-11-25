@@ -18,8 +18,47 @@ public final class VoiceHandoff {
     private VoiceHandoff(String id, String hash, byte[] data) {
         transferId = id; sha256 = hash; missionJson = data;
     }
+    /** Keep credential-bearing missions together as an actual ZIP inside the v1 transport. */
+    public static byte[] packageForTransfer(byte[] missionJson) throws Exception {
+        VoiceMission mission = VoicePackageImporter.fromJson(missionJson);
+        if (!mission.hasLogins()) return missionJson;
+        java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(output)) {
+            writeEntry(zip, "MANIFEST/manifest.xml", ("<MissionPackageManifest version=\"2\"><Contents>" +
+                    "<Content zipEntry=\"voice.json\"/></Contents></MissionPackageManifest>").getBytes(StandardCharsets.UTF_8));
+            writeEntry(zip, "voice.json", missionJson);
+        }
+        byte[] payload = new JSONObject().put("voiceZip", java.util.Base64.getEncoder().encodeToString(output.toByteArray()))
+                .toString().getBytes(StandardCharsets.UTF_8);
+        if (payload.length > VoicePackageImporter.MAX_JSON) throw new IllegalArgumentException("Package too large for transfer");
+        return payload;
+    }
+
+    private static void writeEntry(java.util.zip.ZipOutputStream zip, String name, byte[] bytes) throws Exception {
+        java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(name);
+        entry.setTime(315532800000L);
+        zip.putNextEntry(entry);
+        zip.write(bytes);
+        zip.closeEntry();
+    }
+
+    public static byte[] missionFromPayload(byte[] payload) throws Exception {
+        if (payload.length == 0 || payload.length > VoicePackageImporter.MAX_JSON) throw new IllegalArgumentException("Payload size");
+        String text = new String(payload, StandardCharsets.UTF_8);
+        VoicePackageImporter.validateDepth(text);
+        org.json.JSONTokener tokener = new org.json.JSONTokener(text);
+        Object value = tokener.nextValue();
+        if (!(value instanceof JSONObject) || tokener.nextClean() != 0) throw new IllegalArgumentException("Invalid package");
+        JSONObject obj = (JSONObject) value;
+        if (keys(obj).equals(keys("voiceZip"))) {
+            return VoicePackageImporter.jsonFromZip(java.util.Base64.getDecoder().decode(obj.getString("voiceZip")));
+        }
+        VoicePackageImporter.fromJson(payload);
+        return payload;
+    }
+
     public static String encode(byte[] missionJson, String transferId) throws Exception {
-        VoicePackageImporter.fromJson(missionJson);
+        missionFromPayload(missionJson);
         UUID.fromString(transferId);
         String envelope = new JSONObject().put("type", TYPE).put("version", 1)
             .put("transferId", transferId).put("sha256", hash(missionJson))
@@ -42,8 +81,7 @@ public final class VoiceHandoff {
         byte[] data = obj.getString("missionJson").getBytes(StandardCharsets.UTF_8);
         String digest = hash(data);
         if (!digest.equals(obj.getString("sha256"))) throw new IllegalArgumentException("Digest mismatch");
-        VoicePackageImporter.fromJson(data);
-        return new VoiceHandoff(id, digest, data);
+        return new VoiceHandoff(id, digest, missionFromPayload(data));
     }
     public static String hash(byte[] data) throws Exception {
         byte[] digest = MessageDigest.getInstance("SHA-256").digest(data);

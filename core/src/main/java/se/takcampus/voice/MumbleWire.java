@@ -98,9 +98,20 @@ public final class MumbleWire {
             return (int) n;
         }
         public String text(int field) throws IOException {
+            return new String(bytes(field), StandardCharsets.UTF_8);
+        }
+        public byte[] bytes(int field) throws IOException {
             Object value = one(field);
-            if (!(value instanceof byte[])) throw new IOException("Expected text field");
-            return new String((byte[]) value, StandardCharsets.UTF_8);
+            if (!(value instanceof byte[])) throw new IOException("Expected bytes field");
+            return ((byte[]) value).clone();
+        }
+        public List<byte[]> messages(int field) throws IOException {
+            List<byte[]> found = new ArrayList<>();
+            for (Object value : values.getOrDefault(field, Collections.emptyList())) {
+                if (!(value instanceof byte[])) throw new IOException("Expected embedded message");
+                found.add(((byte[]) value).clone());
+            }
+            return found;
         }
     }
 }

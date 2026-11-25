@@ -2,17 +2,27 @@
     <uses-feature android:name="android.hardware.type.watch" android:required="true" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <application android:label="WearTAK Voice" android:icon="@drawable/ic_voice" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.NoActionBar">
+    <queries><package android:name="com.aitech.weartak_civ.dev" /><package android:name="com.aitech.weartak_civ" /></queries>
+    <application android:label="@string/voice_app_name" android:icon="@drawable/ic_voice" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.NoActionBar">
         <meta-data android:name="com.google.android.wearable.standalone" android:value="true" />
-        <activity android:taskAffinity="se.takcampus.voice.standalone" android:name=".MainActivity" android:exported="true">
+        <activity android:enableOnBackInvokedCallback="true" android:taskAffinity="${applicationId}" android:name=".MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><data android:scheme="content" android:mimeType="application/zip" /></intent-filter>
+            <intent-filter><action android:name="android.intent.action.SEND" /><category android:name="android.intent.category.DEFAULT" /><data android:mimeType="application/zip" /></intent-filter>
         </activity>
-        <service android:name=".VoiceService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" />
+        <service android:name=".VoiceService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback|phoneCall" />
     </application>
 </manifest>

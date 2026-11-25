@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "weartak-voice"
-include(":core", ":app")
+include(":core", ":app", ":voice-package-api")

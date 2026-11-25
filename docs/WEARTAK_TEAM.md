@@ -1,64 +1,32 @@
-# Brief for the WearTAK team
+# WearTAK integration brief
 
-## Direction
+The project now has two builds sharing the same onboarding parser, review/store,
+Mumble engine and PTT: a real SDK plugin and a standalone application. The standalone
+build needs ordinary Android signing and can import/share the same VX ZIP directly.
+It can also exercise the full host/Companion path through a DEV-only explicit Binder
+adapter in the matching WearTAK Dev build.
 
-WearTAK Voice is now a **standalone Wear OS Mumble application**. The original prototype
-used WearTAK's plugin SDK, but production-host signing/loading was not established. The
-standalone version removes that dependency and lets voice development continue without
-upstream signing keys or changes to WearTAK.
+The host fork adds capabilities/software/plugin inventory and one memory staging
+broker for direct TAK packages and Companion normalized JSON. Its configured-server
+TLS download remains isolated from the restricted local-peer path. No sender URL
+receives host credentials. Plugin UID/package/signer/live binding is checked on each
+control call; one-use origin-bound handles expire; pending payloads remain in memory.
+Receipts survive rebind/restart and distinguish DOWNLOADED, STAGED and APPLIED.
 
-This is an independent alpha, not an official WearTAK or TAK Product Center release.
-It is deliberately not advertised as an importable WearTAK plugin.
+The immutable existing SDK AAR pin/checks remain enforced. Our optional
+`voice-package-api` Binder is supplied through versioned hostExtras. It is a
+prototype extension for upstream review, not a claim of an official SDK release.
+No frozen SDK Parcelable layout or existing transaction number changes.
 
-## Implemented
+See [architecture and onboarding](ARCHITECTURE.md) and [the API proposal, package
+names and DEV signing certificate](SDK_VOICE_PACKAGE_API_PROPOSAL.md). The normal
+sender is another ATAK user sharing channels in VX over GeoTalk; TAKS is an
+additional sender, not a required proprietary onboarding mechanism.
 
-- Own Android foreground service, microphone capture, Opus codecs, playback and momentary PTT.
-- TLS Mumble control and TCP-tunneled voice, live channels and explicit channel joining.
-- Optional password or imported PKCS#12 identity; configurable private CA with hostname checks.
-- Encrypted credential storage using Android Keystore, without automatic host-key access.
-- Import of the existing TAKS Vx JSON/protobuf packages, native review and channel-ID/name checks.
-
-The code builds. All 44 tests passed, including six tests against a real local Mumble server.
-Physical-watch audio, background operation, headset routing and the live TAKS authentication
-mapping remain unverified. The network tests should not be mistaken for hardware certification.
-
-## Future integration points
-
-1. **Provisioning:** forward an accepted voice package into a supported import interface,
-   or use a non-secret acoustic setup offer. No open credential-bearing receiver is exposed
-   by the standalone app. A future interface needs explicit caller authorization and review.
-2. **Identity:** establish an approved way to enroll an app-owned voice identity for the same
-   operator, or expose a host-owned TLS/key operation. Do not copy private keys through channel
-   packages or microphone audio. TAKS must authenticate proof of key possession and authorization.
-3. **Optional plugin wrapper:** a shared audio core could later support a genuine WearTAK plugin,
-   after agreeing on signing/discovery, permissions, capture ownership and supported versions.
-4. **Phone relay:** a CoT/BLE Companion link does not provide a Mumble audio tunnel. A BLE-only
-   voice path would require a separately designed bounded binary audio relay.
-
-The original host/Companion patches were prepared against these source revisions and remain
-unmerged, undeployed prototypes, not a dependency of the standalone app:
-
-| Component | Repository | Inspected commit |
-| --- | --- | --- |
-| SDK | `aegorsuch/weartak-plugin-sdk` | `86bdc8b04797c2cf6caa30e78e796abac1c2a330` |
-| Wear OS host | `aegorsuch/weartak-wearos` | `492b439497249f052d81467dd238844f5d79e1fd` |
-| ATAK Companion | `aegorsuch/atak-plugin-weartak-companion` | `252cc08f6509c3cc5c98f09cf99d647040347d8f` |
-
-## Ownership
-
-This repository owns the watch app. Martine, TAKS onboarding, channel provisioning and server
-certificate authentication belong in `alexanderhavang-ops/taks`. Host/Companion changes belong
-in their own repositories. Documentation is maintained with the corresponding code changes.
-
-
-## 0.3: reusable sound setup and physical PTT
-
-The standalone app now has an experimental WTK1 acoustic HTTPS-link receiver and an explicit
-profile download/review flow. The TAKS card emits a short-lived voice-scoped ticket; credentials
-travel over verified HTTPS. This avoids typing on a watch and does not require host key access.
-The transport is reusable by WearTAK later, but WearTAK must implement its own allowed URLs,
-profile schema and credential boundaries. No WearTAK receiver is shipped or claimed here.
-
-Physical PTT learns a delivered Wear OS stem/back key. Home/power and Samsung-reserved actions
-are not overridden. It works in the foreground only. [Protocol and usage](AUDIO_ONBOARDING.md).
-Server changes live in TAKS; deployment and physical watch verification remain outstanding.
+Channel files may carry an endpoint-scoped Mumble account or a shared server password. Voice owns its own authentication and
+never retrieves WearTAK private keys. Full VX audio/feature compatibility and
+full device compatibility remain to be demonstrated. The standalone client exchanged
+voice with ATAK VX in both directions. A Galaxy Watch Ultra received a channel
+handoff in plugin mode. See [test status](STATUS.md) for the outstanding
+screen-off and earbud issues. The two app variants share local multicast support
+and the TCP-tunneled Mumble client.

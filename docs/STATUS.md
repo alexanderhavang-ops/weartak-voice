@@ -1,6 +1,6 @@
 # Status and roadmap
 
-Last verified: 10 November 2026. Current milestone: **0.3 audio onboarding alpha**.
+Last verified: 10 November 2026. Current milestone: **0.4 capabilities, shared onboarding and PTT alpha**.
 
 | Capability | Status | Verification |
 | --- | --- | --- |
@@ -61,3 +61,32 @@ kept in the TAKS repository.
 The TAKS suite passed 35 tests. A separate loopback-only Murmur run with the actual generated
 Ice authenticator accepted a valid watch login and rejected wrong, malformed, expired and
 revoked credentials. This does not establish deployment on the live node.
+
+## 0.4 development integration
+
+- Actual pinned SDK plugin variant plus independent standalone variant, sharing
+  one importer/review/store/Mumble/PTT implementation.
+- Optional versioned Binder handoff, host-owned memory leases and durable receipt
+  metadata in a matching WearTAK development fork. UID/package/signer/live-binding
+  checks, one-use handles, expiry, deduplication and explicit operator review.
+- Direct `b-f-t-r` candidate classification and Companion normalized channel input
+  converge on that broker. Existing server and source-bound local-peer credential
+  boundaries remain. Stock firmware does not include this extension.
+- Standalone direct file/share import and an opt-in, same-signer DEV adapter for
+  full integration testing without TAK plugin signing.
+- Firmware/plugin/capability snapshots and guarded ATAK voice-transfer controls.
+- Watch physical-button and Android media-button PTT with multiple-source tracking,
+  optional click-toggle, communication routing and forced-stop behavior.
+
+### Watch testing through 0.6.19
+
+On a Galaxy Watch Ultra, the standalone client exchanged voice in both directions
+with ATAK VX. The tester confirmed Back-button PTT toggle and reported intermittent
+earbud media-button delivery. The watch plugin received a channel package through
+WearTAK Companion on the 5.8.4 companion-pause-test1 DEV host. The transfer carries
+channel configuration only. For a new endpoint Voice requires separate credentials.
+
+The source includes local multicast voice and Mumble over TLS/TCP. Screen-off
+Mumble reliability remains open: observed sessions timed out and reconnected.
+Full VX interoperability, private/whisper calls and UDP Mumble remain outside
+the verified scope.

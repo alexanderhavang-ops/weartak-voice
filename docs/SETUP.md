@@ -29,17 +29,17 @@ for `adb connect`. Android API 30 or later is required.
 
 ## Connect and talk
 
-1. Open the app and tap **Server & login**.
-2. Set the Mumble hostname, port (normally 64738), and server-authorized watch username.
-3. Supply a password if the server requires one, or import an accepted client identity.
+1. Open **Voice setup → Enter channel manually → Mumble**.
+2. Set the Mumble hostname and port (normally 64738).
+3. For guest access enter only the shared server password, or leave it empty on an open server. The watch supplies your saved callsign or a stable WearTAK guest name. For account access enter the assigned username and account password, or import an accepted client identity.
 4. Tap **Connect** and allow microphone access. Notification permission is optional but
    makes the ongoing disconnect control easier to find.
-5. Choose a live channel and tap **Join selected channel**.
-6. Once the state is **READY**, hold **HOLD TO TALK**. Release to stop.
+5. Choose a live channel and tap **Join**.
+6. Once the channel is confirmed, hold **PTT**. Release to stop.
 
 PTT also releases when the screen loses focus, the channel changes, the network is lost,
 transmission is restricted, or the connection is stopped. A continuous press is limited to
-60 seconds. There is no automatic reconnect or automatic resume of a transmission.
+60 seconds. Following a transport failure, a previously authenticated Mumble session reconnects and attempts to rejoin the confirmed room. Press PTT again to speak.
 
 The service can continue receiving while the screen is off, but physical-watch background
 and battery behaviour still need testing. Tap **Disconnect** or use the notification action

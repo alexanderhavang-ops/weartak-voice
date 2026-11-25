@@ -24,6 +24,8 @@ data class VoiceSettings(
     val displayName: String = "", val setupChannels: String = "", val defaultChannelId: Int = -1,
     val defaultChannelName: String = "", val credentialExpiresAt: Long = 0,
 ) {
+    fun mumbleName(context: Context): String = username.ifBlank { LocalVoiceSettings.mumbleGuestName(context) }
+
     fun tls(): SSLContext {
         val keyManagers = identity?.let { bytes ->
             val store = KeyStore.getInstance("PKCS12"); val pass = identityPassword.toCharArray()
@@ -53,7 +55,7 @@ data class VoiceSettings(
 /** Credentials and imported private-key material are sealed together; no plaintext fallback. */
 object SettingsStore {
     private const val ALIAS = "voice-settings-aes-v1"
-    private fun key(): SecretKey {
+    @Synchronized private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         return (store.getKey(ALIAS, null) as? SecretKey) ?: KeyGenerator.getInstance("AES", "AndroidKeyStore").apply {
             init(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
@@ -61,6 +63,21 @@ object SettingsStore {
                 .setKeySize(256).build())
         }.generateKey()
     }
+    internal fun sealChannels(bytes: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        cipher.updateAAD("voice-channels-v1".toByteArray(Charsets.UTF_8))
+        return byteArrayOf(1) + cipher.iv + cipher.doFinal(bytes)
+    }
+
+    internal fun openChannels(bytes: ByteArray): ByteArray {
+        require(bytes.size >= 29 && bytes[0] == 1.toByte())
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(1, 13)))
+        cipher.updateAAD("voice-channels-v1".toByteArray(Charsets.UTF_8))
+        return cipher.doFinal(bytes, 13, bytes.size - 13)
+    }
+
     private fun file(context: Context) = AtomicFile(File(context.filesDir, "voice-settings.vault"))
     @Synchronized fun load(context: Context): VoiceSettings {
         val bytes = try { file(context).readFully() } catch (_: java.io.FileNotFoundException) { return VoiceSettings() }

@@ -32,6 +32,17 @@ public final class VoicePackageImporter {
     }
 
     public static byte[] jsonFromZip(byte[] data) throws Exception {
+        try {
+            return legacyJsonFromZip(data);
+        } catch (Exception legacyFailure) {
+            if (legacyFailure.getMessage() != null && (legacyFailure.getMessage().startsWith("Conflicting ") || legacyFailure.getMessage().equals("Invalid Mumble credentials"))) throw legacyFailure;
+            require(data.length > 0 && data.length <= MAX_ZIP, "Package size");
+            // Stock VX can contain multicast channels and a different protobuf layout.
+            return VxPackage.missionJson(new ByteArrayInputStream(data));
+        }
+    }
+
+    private static byte[] legacyJsonFromZip(byte[] data) throws Exception {
         require(data.length > 0 && data.length <= MAX_ZIP, "Package size");
         Map<String, byte[]> entries = new HashMap<>();
         int expanded = 0;
@@ -96,7 +107,38 @@ public final class VoicePackageImporter {
         Object root = tokener.nextValue();
         require(root instanceof JSONObject && tokener.nextClean() == 0, "Invalid mission JSON");
         JSONObject obj = (JSONObject) root;
-        // Credentials/trust are deliberately outside a channel package.
+        VoiceLogin.Fields fields = new VoiceLogin.Fields(obj);
+        VoiceMission parsed = metadata(obj);
+        return new VoiceMission(parsed.id, parsed.name, parsed.channels, fields.resolve(parsed.channels));
+    }
+
+    /** Fill only missing endpoint logins when preparing the selected mission for transfer. */
+    public static byte[] withAvailableLogins(byte[] missionJson,
+            java.util.function.Function<VoiceProfile, VoiceLogin> lookup) throws Exception {
+        VoiceMission mission = fromJson(missionJson);
+        JSONObject document = new JSONObject(new String(missionJson, StandardCharsets.UTF_8));
+        JSONArray channels = document.getJSONArray("channels");
+        Set<String> visited = new HashSet<>();
+        boolean changed = false;
+        for (int i = 0; i < mission.channels.size(); i++) {
+            VoiceProfile profile = mission.channels.get(i).profile();
+            if (profile.multicast() || mission.login(profile) != null || !visited.add(VoiceLogin.endpoint(profile))) continue;
+            VoiceLogin login = lookup.apply(profile);
+            if (login == null) continue;
+            JSONObject channel = channels.getJSONObject(i);
+            if (!login.username.isEmpty()) channel.put("username", login.username);
+            channel.put("password", login.password);
+            changed = true;
+        }
+        if (!changed) return missionJson;
+        byte[] result = document.toString().getBytes(StandardCharsets.UTF_8);
+        fromJson(result);
+        return result;
+    }
+
+    private static VoiceMission metadata(JSONObject obj) throws Exception {
+        if (obj.has("voiceProfileVersion")) return portableMission(obj);
+        // Credential fields have already been extracted. Trust material is not imported.
         require(keys(obj).equals(keys("missionId", "name", "channels", "missionType", "missionIP", "missionPort", "missionDefaultProtocol")), "Unexpected mission fields");
         String missionId = uuid(obj.getJSONObject("missionId").getString("uuid"));
         require(keys(obj.getJSONObject("missionId")).equals(keys("uuid")), "Unexpected identity fields");
@@ -129,6 +171,34 @@ public final class VoicePackageImporter {
             channels.add(new VoiceMission.Channel(id, label(ch.getString("name")), host, uri.getPort(), (int) channelId));
         }
         return new VoiceMission(missionId, name, channels);
+    }
+
+    public static byte[] portableJson(java.util.List<VoiceProfile> profiles, String name) throws Exception {
+        JSONArray channels = new JSONArray();
+        for (VoiceProfile p : profiles) {
+            channels.put(new JSONObject().put("id", p.id().toString()).put("channel", AudioSetupPayload.fields(p)));
+        }
+        byte[] result = new JSONObject().put("voiceProfileVersion", 1).put("name", name)
+                .put("channels", channels).toString().getBytes(StandardCharsets.UTF_8);
+        fromJson(result);
+        return result;
+    }
+
+    private static VoiceMission portableMission(JSONObject obj) throws Exception {
+        require(keys(obj).equals(keys("voiceProfileVersion", "name", "channels"))
+                && Integer.valueOf(1).equals(obj.get("voiceProfileVersion")), "Invalid portable channel package");
+        JSONArray input = obj.getJSONArray("channels");
+        require(input.length() > 0 && input.length() <= 64, "Channel count");
+        ArrayList<VoiceMission.Channel> channels = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < input.length(); i++) {
+            JSONObject item = input.getJSONObject(i);
+            require(keys(item).equals(keys("id", "channel")), "Unexpected portable channel fields");
+            String id = uuid(item.getString("id"));
+            require(ids.add(id), "Duplicate channel UUID");
+            channels.add(new VoiceMission.Channel(AudioSetupPayload.parse(item.getJSONArray("channel"), UUID.fromString(id))));
+        }
+        return new VoiceMission(channels.get(0).id, label(obj.getString("name")), channels);
     }
 
     public static byte[] readBounded(InputStream input, int max) throws IOException {
