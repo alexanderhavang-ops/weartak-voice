@@ -37,11 +37,16 @@ class VoicePackageClient(private val context: Context, private val hostPackage: 
             VoiceRuntime.onboardingStatus = "Voice offer expired or revoked"; VoiceRuntime.changed()
         }
     }
+    private var enrollment: VoiceEnrollment? = null
     fun start() {
         val caps = control.capabilities
         require(caps.getInt("version") == 1 && caps.getInt("maxZipBytes") in 1..C.MAX_ZIP && caps.getInt("maxJsonBytes") in 1..C.MAX_JSON)
         val result = control.registerReceiver(receiver)
         check(result.getInt("code", -1) == C.OK && result.getInt("version") == 1)
+        caps.getBinder("voiceEnrollment")?.let {
+            enrollment = VoiceEnrollment(IVoiceEnrollment.Stub.asInterface(it), hostUid)
+            VoiceEnrollment.current = enrollment
+        }
         ready = true
         VoiceRuntime.receiptSync = { syncReceipts() }
         syncReceipts()
@@ -130,6 +135,7 @@ class VoicePackageClient(private val context: Context, private val hostPackage: 
     }
     fun close() {
         if (closed) return
+        if (VoiceEnrollment.current === enrollment) VoiceEnrollment.current = null
         closed = true; ready = false; VoiceRuntime.receiptSync = null
         runCatching { control.unregisterReceiver(receiver) }; worker.shutdownNow()
     }

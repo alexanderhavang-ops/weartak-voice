@@ -1,7 +1,7 @@
 import java.security.MessageDigest
 
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
-val voiceVersion = "0.6.22"
+val voiceVersion = "0.6.23"
 val legacyDevBridge = providers.gradleProperty("legacyStandaloneDevBridge").orNull == "true"
 
 android {
@@ -12,7 +12,7 @@ android {
         minSdk = 30
         targetSdk = 34
         manifestPlaceholders["voiceBindPermission"] = "se.takcampus.voice.watch.permission.BIND_PLUGIN"
-        versionCode = 82
+        versionCode = 83
         versionName = voiceVersion
     }
     flavorDimensions += "integration"

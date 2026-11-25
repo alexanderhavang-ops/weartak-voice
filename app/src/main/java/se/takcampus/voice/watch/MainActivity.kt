@@ -23,6 +23,7 @@ import se.takcampus.voice.WifiVoiceAdvertiser
 import se.takcampus.voice.WifiVoiceTransfer
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import se.takcampus.voice.VoiceLogin
 import java.util.UUID
 
 /** Standalone watch UI. PTT is momentary and always released when this screen loses focus. */
@@ -630,10 +631,25 @@ class MainActivity : Activity() {
                 val old = SettingsStore.load(this)
                 val sameServer = profile.host().equals(old.host, true) && profile.port() == old.port
                 val saved = if (sameServer) old else VoiceSettings()
-                val account = if (login == null) saved else saved.copy(username = login.username, password = login.password,
-                    credentialExpiresAt = 0)
-                SettingsStore.save(this, account.copy(host = profile.host(), port = profile.port(), defaultChannelId = profile.roomId(),
-                    defaultChannelName = profile.roomName()))
+                val target = saved.copy(host = profile.host(), port = profile.port(), defaultChannelId = profile.roomId(),
+                    defaultChannelName = profile.roomName())
+                val account = when (login?.mode) {
+                    null -> target
+                    VoiceLogin.ENROLL -> {
+                        if (login.profileId.isEmpty() || target.enrollmentProfile != login.profileId || target.identity == null ||
+                            runCatching { target.tls() }.isFailure) {
+                            enrollVoice(target, login.profileId.ifBlank { null })
+                            return
+                        }
+                        target
+                    }
+                    VoiceLogin.CERT -> target.copy(identity = java.util.Base64.getDecoder().decode(login.identity),
+                        identityPassword = login.password, enrollmentProfile = "", username = "", password = "",
+                        credentialExpiresAt = 0).also { it.tls() }
+                    else -> target.copy(username = login.username, password = login.password, identity = null,
+                        identityPassword = "", enrollmentProfile = "", credentialExpiresAt = 0)
+                }
+                SettingsStore.save(this, account)
                 LocalVoiceSettings.select(this, null)
                 if (!sameServer && login == null) {
                     render()
@@ -705,6 +721,46 @@ class MainActivity : Activity() {
         }
         if (code == 12 && results.firstOrNull() == PackageManager.PERMISSION_GRANTED) listenForSetup()
     }
+    private var certificateTarget: VoiceSettings? = null
+    private var enrollmentInProgress = false
+
+    private fun enrollVoice(target: VoiceSettings, requested: String? = null) {
+        val link = VoiceEnrollment.current
+        if (link == null) { message("Open Voice from an enrollment-capable WearTAK host."); return }
+        val available = runCatching { link.profiles() }.getOrDefault(emptyList())
+        val profiles = available.filter { requested == null || it.first == requested }
+        if (profiles.isEmpty()) { message("Set up the selected auto-enrollment profile in WearTAK using Companion."); return }
+        fun confirm(profile: Pair<String, String>) {
+            AlertDialog.Builder(this).setTitle("Enroll Voice")
+                .setMessage("Use ${profile.second} to issue a new Voice certificate for ${target.host}:${target.port}?")
+                .setNegativeButton("Cancel", null).setPositiveButton("Enroll") { _, _ ->
+                    if (enrollmentInProgress) return@setPositiveButton
+                    enrollmentInProgress = true
+                    val revision = SettingsStore.revision
+                    Toast.makeText(this, "Requesting Voice certificate…", Toast.LENGTH_SHORT).show()
+                    Thread {
+                        val result = runCatching { link.issue(target, profile.first, LocalVoiceSettings.uid(this)) }
+                        runOnUiThread {
+                            enrollmentInProgress = false
+                            if (isFinishing || isDestroyed) return@runOnUiThread
+                            if (revision != SettingsStore.revision || !idle() || VoiceEnrollment.current !== link) {
+                                message("Setup changed during enrollment. Select the profile again."); return@runOnUiThread
+                            }
+                            result.onSuccess { settings ->
+                                runCatching { SettingsStore.save(this, settings); LocalVoiceSettings.select(this, null) }
+                                    .onSuccess { render(); message("Voice certificate saved. Tap Connect to join Mumble.") }
+                                    .onFailure { message("Could not save Voice certificate.") }
+                            }.onFailure { message(it.message ?: "Voice enrollment failed.") }
+                        }
+                    }.start()
+                }.show()
+        }
+        if (profiles.size == 1) confirm(profiles.single())
+        else AlertDialog.Builder(this).setTitle("WearTAK enrollment profile")
+            .setItems(profiles.map { it.second }.toTypedArray()) { _, i -> confirm(profiles[i]) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
     @SuppressLint("WearPasswordInput")
     private fun serverDialog() {
         val old = try { SettingsStore.load(this) } catch (_: Exception) { message("Saved credentials could not be decrypted."); return }
@@ -718,6 +774,32 @@ class MainActivity : Activity() {
         val pass = field("Server or account password (optional)", old.password, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val user = field("Username (optional)", old.username, InputType.TYPE_CLASS_TEXT)
         user.hint = "Guest: " + LocalVoiceSettings.mumbleGuestName(this)
+        val modes = listOf("Mumble server password", "TAK auto-enrollment", "Import client certificate (.p12)", "Mumble account login")
+        val mode = android.widget.Spinner(this)
+        mode.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
+        column.addView(mode, 4)
+        val savedMode = when { old.enrollmentProfile.isNotEmpty() -> 1; old.identity != null -> 2; old.username.isNotEmpty() -> 3; else -> 0 }
+        mode.setSelection(savedMode)
+        var displayedMode = savedMode
+        val passLabel = column.getChildAt(column.indexOfChild(pass) - 1) as TextView
+        val userLabel = column.getChildAt(column.indexOfChild(user) - 1)
+        mode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                if (position != displayedMode) {
+                    displayedMode = position
+                    val restore = position == savedMode && host.text.toString().trim().equals(old.host, true) &&
+                        port.text.toString().toIntOrNull() == old.port
+                    user.setText(if (restore) old.username else "")
+                    pass.setText(if (restore) old.password else "")
+                }
+                user.visibility = if (position == 3) View.VISIBLE else View.GONE
+                userLabel.visibility = user.visibility
+                pass.visibility = if (position == 0 || position == 3) View.VISIBLE else View.GONE
+                passLabel.visibility = pass.visibility
+                passLabel.text = if (position == 3) "Account password" else "Mumble server password (optional)"
+            }
+        }
         // Keep saved credentials tied to their endpoint. A password entered for a new
         // server may legitimately be identical to the previous server's password.
         var originalEndpoint = true
@@ -730,7 +812,7 @@ class MainActivity : Activity() {
                 if (original == originalEndpoint) return
                 originalEndpoint = original
                 for ((field, saved) in listOf(user to old.username, pass to old.password)) {
-                    if (original && field.text.isEmpty()) field.setText(saved)
+                    if (original && displayedMode == savedMode && field.text.isEmpty()) field.setText(saved)
                     if (!original && field.text.toString() == saved) field.setText("")
                 }
             }
@@ -746,9 +828,17 @@ class MainActivity : Activity() {
                 require(hostname.isNotEmpty() && !hostname.contains('/') && portNumber in 1..65535)
                 val sameServer = hostname.equals(old.host, true) && portNumber == old.port
                 val previous = if (sameServer) old else VoiceSettings()
-                val username = user.text.toString().trim()
+                val choice = mode.selectedItemPosition
+                val username = if (choice == 3) user.text.toString().trim() else ""
                 val password = pass.text.toString()
-                val settings = previous.copy(host = hostname, port = portNumber,
+                val destination = previous.copy(host = hostname, port = portNumber)
+                if (choice == 1) { dialog.dismiss(); enrollVoice(destination); return@setOnClickListener }
+                if (choice == 2) {
+                    dialog.dismiss(); certificateTarget = destination
+                    picker("application/x-pkcs12", 4); return@setOnClickListener
+                }
+                if (choice == 3) require(username.isNotBlank() && password.isNotEmpty())
+                val settings = destination.copy(identity = null, identityPassword = "", enrollmentProfile = "",
                     username = username, password = password,
                     credentialExpiresAt = if (username == previous.username && password == previous.password)
                         previous.credentialExpiresAt else 0)
@@ -766,7 +856,7 @@ class MainActivity : Activity() {
                     1 -> picker("*/*", 3)
                     else -> try {
                         val old = SettingsStore.load(this)
-                        SettingsStore.save(this, if (which == 2) old.copy(identity = null, identityPassword = "") else old.copy(ca = null))
+                        SettingsStore.save(this, if (which == 2) old.copy(identity = null, identityPassword = "", enrollmentProfile = "") else old.copy(ca = null))
                     } catch (_: Exception) { message("Could not update credentials.") }
                 }
             }.show()
@@ -775,7 +865,7 @@ class MainActivity : Activity() {
         val staged = getExternalFilesDir("imports")?.listFiles()?.filter { file ->
             file.isFile && file.length() <= 262144 && when (code) {
                 1 -> file.name.endsWith(".zip", true)
-                2 -> file.name.endsWith(".p12", true) || file.name.endsWith(".pfx", true)
+                2, 4 -> file.name.endsWith(".p12", true) || file.name.endsWith(".pfx", true)
                 else -> file.name.endsWith(".pem", true) || file.name.endsWith(".crt", true) || file.name.endsWith(".cer", true)
             }
         }?.sortedBy { it.name } ?: emptyList()
@@ -805,7 +895,12 @@ class MainActivity : Activity() {
                         ChannelStore.stage(this, VoiceHandoff.encode(json, UUID.randomUUID().toString()))
                         runOnUiThread { render() }
                     }
-                    2 -> runOnUiThread { identityPassword(bytes, stagedFile) }
+                    2, 4 -> runOnUiThread {
+                        val target = if (kind == 4) certificateTarget else SettingsStore.load(this)
+                        certificateTarget = null
+                        if (target == null) { bytes.fill(0); message("Select the Mumble endpoint again.") }
+                        else identityPassword(bytes, stagedFile, target)
+                    }
                     3 -> {
                         val certs = CertificateFactory.getInstance("X.509").generateCertificates(bytes.inputStream())
                         require(certs.isNotEmpty() && certs.size <= 8)
@@ -825,7 +920,7 @@ class MainActivity : Activity() {
     }
     // PKCS#12 unlocking is optional and the password is never transmitted.
     @SuppressLint("WearPasswordInput")
-    private fun identityPassword(bytes: ByteArray, stagedFile: java.io.File?) {
+    private fun identityPassword(bytes: ByteArray, stagedFile: java.io.File?, target: VoiceSettings) {
         val input = EditText(this).apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD; hint = "PKCS#12 password" }
         val dialog = AlertDialog.Builder(this).setTitle("Import client identity").setView(input)
             .setNegativeButton("Cancel") { _, _ -> bytes.fill(0) }.setPositiveButton("Import", null).create()
@@ -834,9 +929,10 @@ class MainActivity : Activity() {
             val password = input.text.toString(); input.setText(""); dialog.dismiss()
             Thread {
                 try {
-                    val settings = SettingsStore.load(this).copy(identity = bytes, identityPassword = password)
+                    val settings = target.copy(identity = bytes, identityPassword = password, enrollmentProfile = "",
+                        username = "", password = "", credentialExpiresAt = 0)
                     settings.tls() // Validate password, private key and validity before saving.
-                    SettingsStore.save(this, settings)
+                    SettingsStore.save(this, settings); LocalVoiceSettings.select(this, null)
                     stagedFile?.delete() // Remove the app-owned plaintext staging copy after sealing it.
                     runOnUiThread { message("Client identity saved. Voice login will use it on the next connection.") }
                 } catch (_: Exception) { runOnUiThread { message("Identity import failed. Check the password and certificate validity.") } }

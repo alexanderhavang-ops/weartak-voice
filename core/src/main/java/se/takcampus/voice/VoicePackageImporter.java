@@ -126,12 +126,32 @@ public final class VoicePackageImporter {
             VoiceLogin login = lookup.apply(profile);
             if (login == null) continue;
             JSONObject channel = channels.getJSONObject(i);
-            if (!login.username.isEmpty()) channel.put("username", login.username);
-            channel.put("password", login.password);
+            login.write(channel);
             changed = true;
         }
         if (!changed) return missionJson;
         byte[] result = document.toString().getBytes(StandardCharsets.UTF_8);
+        fromJson(result);
+        return result;
+    }
+
+    /** Replace login only for the endpoint the operator chose. Preserve other destinations. */
+    public static byte[] setLogin(byte[] data, VoiceProfile target, VoiceLogin login) throws Exception {
+        VoiceMission mission = fromJson(data);
+        JSONObject doc = new JSONObject(new String(data, StandardCharsets.UTF_8));
+        VoiceLogin.take(doc);
+        JSONArray channels = doc.getJSONArray("channels");
+        Set<String> written = new HashSet<>();
+        for (int i = 0; i < channels.length(); i++) {
+            JSONObject entry = channels.getJSONObject(i);
+            VoiceLogin.take(entry);
+            VoiceProfile profile = mission.channels.get(i).profile();
+            if (profile.multicast() || !written.add(VoiceLogin.endpoint(profile))) continue;
+            VoiceLogin selected = VoiceLogin.endpoint(target).equals(VoiceLogin.endpoint(profile)) ? login : mission.login(profile);
+            if (selected != null) selected.write(entry);
+        }
+        require(written.contains(VoiceLogin.endpoint(target)), "Unknown Mumble endpoint");
+        byte[] result = doc.toString().getBytes(StandardCharsets.UTF_8);
         fromJson(result);
         return result;
     }

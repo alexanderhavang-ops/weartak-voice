@@ -108,7 +108,7 @@ public final class VxPackage {
                         VoiceLogin.endpoint(p).equals(VoiceLogin.endpoint(source.profile()))) index = i;
             }
             if (index < 0) throw VoiceLogin.invalid();
-            result.getJSONArray("channels").getJSONObject(index).put("username", login.username).put("password", login.password);
+            login.write(result.getJSONArray("channels").getJSONObject(index));
         }
         return result.toString().getBytes(StandardCharsets.UTF_8);
     }

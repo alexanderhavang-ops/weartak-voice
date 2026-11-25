@@ -50,6 +50,41 @@ public final class VoiceSetupPathsTest {
         assertThrows(IllegalArgumentException.class, () -> AudioSetupPayload.channel(direct.substring(0, direct.length() - 1) + ",\"secret\"]"));
     }
 
+    @Test public void phoneLoginChoiceSurvivesZipAndBleAndIsScopedToEndpoint() throws Exception {
+        VoiceProfile other = new VoiceProfile(UUID.randomUUID(), "Other", VoiceProfile.Mode.MUMBLE,
+                "other.example.org", 64738, "", 0, "", 17, "Elsewhere");
+        byte[] base = VoicePackageImporter.portableJson(List.of(MUMBLE, other, UDP), "Two destinations");
+        base = VoicePackageImporter.setLogin(base, other, new VoiceLogin("other-user", "other-pass"));
+        for (VoiceLogin login : List.of(VoiceLogin.enroll(UUID.randomUUID().toString()), VoiceLogin.enroll(""),
+                VoiceLogin.server(""), VoiceLogin.server("shared-pass"), new VoiceLogin("member", "account-pass"),
+                VoiceLogin.certificate(new byte[]{1, 2, 3}, "file-pass"))) {
+            base = VoicePackageImporter.setLogin(base, MUMBLE, login);
+            byte[] zip = VoiceHandoff.packageForTransfer(base);
+            VoiceMission mission = VoicePackageImporter.fromJson(VoiceHandoff.decode(
+                    VoiceHandoff.encode(zip, UUID.randomUUID().toString())).missionJson);
+            VoiceLogin actual = mission.login(MUMBLE);
+            assertEquals(login.mode, actual.mode);
+            assertEquals(login.profileId, actual.profileId);
+            assertEquals(login.identity, actual.identity);
+            assertEquals(login.username, actual.username);
+            assertEquals(login.password, actual.password);
+            assertEquals("other-pass", mission.login(other).password);
+            assertNull(mission.login(UDP));
+        }
+    }
+
+    @Test public void malformedOrMixedAuthIsRejected() throws Exception {
+        for (String malformed : List.of("{\"mode\":\"enroll\",\"profileId\":\"invalid\"}",
+                "{\"mode\":\"p12\",\"identity\":\"!\",\"filePassword\":\"\"}", "{\"mode\":\"unknown\"}")) {
+            org.json.JSONObject obj = new org.json.JSONObject().put("voiceAuth", new org.json.JSONObject(malformed));
+            assertEquals("Invalid Mumble credentials", assertThrows(IllegalArgumentException.class,
+                    () -> VoiceLogin.take(obj)).getMessage());
+        }
+        org.json.JSONObject mixed = new org.json.JSONObject().put("password", "existing")
+                .put("voiceAuth", new org.json.JSONObject().put("mode", "server"));
+        assertThrows(IllegalArgumentException.class, () -> VoiceLogin.take(mixed));
+    }
+
     private static String audioRoundTrip(String value) {
         AtomicReference<String> decoded = new AtomicReference<>();
         short[] samples = AudioLinkCodec.encode(value);

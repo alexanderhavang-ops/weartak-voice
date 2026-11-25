@@ -46,6 +46,19 @@ and battery behaviour still need testing. Tap **Disconnect** or use the notifica
 to end the session. The watch needs its own usable network route; an existing CoT/BLE
 Companion link is not itself an Internet connection or voice relay.
 
+## Companion voice onboarding
+
+Choose a voice ZIP **on the phone** and review its Mumble endpoints. Both Bluetooth and Wi-Fi transfers offer **Set Mumble login**. Keep the imported login, or select a destination and change its authentication.
+
+| Choice | What Voice receives |
+| --- | --- |
+| Mumble server password | The shared password. Leave it blank for an open server. Voice uses the watch callsign or guest name. |
+| TAK auto-enrollment | A reference to a WearTAK server profile. On the watch, accept the package, select the channel and confirm enrollment. Voice generates a new key. The updated WearTAK host uses the selected profile’s current username, password, route and CA on HTTPS port 8446 to request a certificate for that key. |
+| Import client certificate (.p12) | The explicitly selected soft certificate, its private key and file password. Choose an imported ATAK soft certificate or a PKCS#12 file on the phone. |
+| Mumble account login | The Mumble username and password for that endpoint. |
+
+The watch manual Mumble setup offers the same choices. Enrollment using WearTAK credentials requires the Voice plugin and a host with the enrollment capability. For a standalone install, use the server password, Mumble account or an imported identity. After enrollment, tap **Connect** and confirm the joined channel. The Mumble server must accept the issued certificate. Companion does not copy auto-enrolled ATAK private keys.
+
 ## Certificates and trust
 
 Use **Client certificate / trust → Import client identity (.p12)** to import a certificate
@@ -80,5 +93,4 @@ selects one of its endpoints; importing does not automatically connect. Saved ch
 checked against their saved names before joining, so a reused server ID cannot silently
 select a different channel.
 
-Automatic Martine delivery and Companion forwarding are not part of this alpha. Acoustic setup
-is implemented in 0.3 and requires the matching TAKS update described above.
+Companion can deliver channels from the phone without staging a ZIP on the watch.

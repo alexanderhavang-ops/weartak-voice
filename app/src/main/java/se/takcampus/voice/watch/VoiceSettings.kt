@@ -22,7 +22,7 @@ data class VoiceSettings(
     val host: String = "", val port: Int = 64738, val username: String = "",
     val password: String = "", val identity: ByteArray? = null, val identityPassword: String = "", val ca: ByteArray? = null,
     val displayName: String = "", val setupChannels: String = "", val defaultChannelId: Int = -1,
-    val defaultChannelName: String = "", val credentialExpiresAt: Long = 0,
+    val defaultChannelName: String = "", val credentialExpiresAt: Long = 0, val enrollmentProfile: String = "",
 ) {
     fun mumbleName(context: Context): String = username.ifBlank { LocalVoiceSettings.mumbleGuestName(context) }
 
@@ -54,6 +54,8 @@ data class VoiceSettings(
 
 /** Credentials and imported private-key material are sealed together; no plaintext fallback. */
 object SettingsStore {
+    @Volatile var revision: Long = 0
+        private set
     private const val ALIAS = "voice-settings-aes-v1"
     @Synchronized private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -82,6 +84,7 @@ object SettingsStore {
     @Synchronized fun clear(context: Context) {
         val target = file(context)
         target.delete()
+        revision++
         check(!target.baseFile.exists() && !File(target.baseFile.path + ".bak").exists()) { "Could not remove saved Voice settings" }
     }
 
@@ -97,7 +100,7 @@ object SettingsStore {
             return VoiceSettings(obj.getString("host"), obj.getInt("port"), obj.getString("username"), obj.optString("password"),
                 blob("identity"), obj.optString("identityPassword"), blob("ca"),
                 obj.optString("displayName"), obj.optString("setupChannels"), obj.optInt("defaultChannelId", -1),
-                obj.optString("defaultChannelName"), obj.optLong("credentialExpiresAt", 0))
+                obj.optString("defaultChannelName"), obj.optLong("credentialExpiresAt", 0), obj.optString("enrollmentProfile"))
         } finally { clear.fill(0) }
     }
     @Synchronized fun save(context: Context, settings: VoiceSettings) {
@@ -106,14 +109,14 @@ object SettingsStore {
             .put("password", settings.password).put("identityPassword", settings.identityPassword)
             .put("identity", settings.identity?.let { Base64.encodeToString(it, Base64.NO_WRAP) } ?: "")
             .put("ca", settings.ca?.let { Base64.encodeToString(it, Base64.NO_WRAP) } ?: "")
-        obj.put("displayName", settings.displayName).put("setupChannels", settings.setupChannels)
+        obj.put("enrollmentProfile", settings.enrollmentProfile).put("displayName", settings.displayName).put("setupChannels", settings.setupChannels)
             .put("defaultChannelId", settings.defaultChannelId).put("defaultChannelName", settings.defaultChannelName)
             .put("credentialExpiresAt", settings.credentialExpiresAt)
         val clear = obj.toString().toByteArray(Charsets.UTF_8)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val encrypted = byteArrayOf(1) + cipher.iv + cipher.doFinal(clear); clear.fill(0)
         val target = file(context); val stream = target.startWrite()
-        try { stream.write(encrypted); target.finishWrite(stream) }
+        try { stream.write(encrypted); target.finishWrite(stream); revision++ }
         catch (error: Exception) { target.failWrite(stream); throw error }
     }
 }

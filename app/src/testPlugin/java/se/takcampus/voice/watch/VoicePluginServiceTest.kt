@@ -27,17 +27,30 @@ class VoicePluginServiceTest {
     }
     private fun initialize() {
         val host = "com.aitech.weartak_civ.dev"
-        org.robolectric.Shadows.shadowOf(service.packageManager).setPackagesForUid(Binder.getCallingUid(), host)
-        remote.initializePluginV3(PluginInitParcel(host, Binder.getCallingUid(), service.packageName), null, null, null)
+        val signer = javaClass.getResourceAsStream("/weartak-dev-public.pem")!!.use {
+            java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(it)
+        }
+        val signatures = android.content.pm.SigningInfo()
+        org.robolectric.Shadows.shadowOf(signatures).setSignatures(arrayOf(android.content.pm.Signature(signer.encoded)))
+        val info = android.content.pm.PackageInfo().apply {
+            packageName = host
+            applicationInfo = android.content.pm.ApplicationInfo().also { it.packageName = host; it.uid = Binder.getCallingUid() }
+            signingInfo = signatures
+        }
+        val pm = org.robolectric.Shadows.shadowOf(service.packageManager)
+        pm.installPackage(info)
+        pm.setPackagesForUid(Binder.getCallingUid(), host)
+        val control = com.weartak.plugin.sdk.aidl.IWearTakPluginControl.Stub.asInterface(Binder())
+        remote.initializePluginV3(PluginInitParcel(host, Binder.getCallingUid(), service.packageName), control, null, null)
     }
     @Test fun noImportOrCapabilitiesBeforeValidHostInitialization() {
-        try { remote.mainUiState; fail() } catch (_: IllegalStateException) { }
+        try { remote.mainUiState; fail() } catch (_: SecurityException) { }
         try { remote.initializePluginV3(PluginInitParcel(service.packageName, Binder.getCallingUid() + 1, service.packageName), null, null, null); fail() }
         catch (_: IllegalArgumentException) { }
         initialize()
         assertEquals(0, remote.mainUiState.getInt("voice_channels_v1"))
         service.onUnbind(Intent())
-        try { remote.mainUiState; fail() } catch (_: IllegalStateException) { }
+        try { remote.mainUiState; fail() } catch (_: SecurityException) { }
     }
     @Test fun devPluginRejectsAnotherPackageEvenIfTheUidOwnsIt() {
         val other = "example.other.host"
